@@ -1,0 +1,86 @@
+<navigation-bar title="统计" back="{{false}}" color="#2F3A34" background="#EDF4F0"></navigation-bar>
+
+<scroll-view class="scroll-page" scroll-y type="list">
+  <view class="page stats-page">
+    <view class="stats-header">
+      <view>
+        <view class="stats-title">{{rangeLabel}}统计</view>
+        <view class="muted">按标签、成员和时间范围查看</view>
+      </view>
+      <view class="pill">全部成员</view>
+    </view>
+
+    <view class="stats-range-switch-wrap">
+      <view class="stats-range-switch">
+        <view class="stats-range-switch-thumb" style="transform: translateX({{rangeIndex * 100}}%);"></view>
+        <view
+          wx:for="{{rangeOptions}}"
+          wx:key="key"
+          class="stats-range-switch-item {{statsRange === item.key ? 'active' : ''}}"
+          data-range="{{item.key}}"
+          bindtap="switchStatsRange"
+        >
+          {{item.label}}
+        </view>
+      </view>
+    </view>
+
+    <view class="stats-period-nav">
+      <button class="period-button prev" data-offset="-1" bindtap="changePeriod">‹</button>
+      <view class="period-main" bindtap="goToCurrentPeriod">
+        <view class="period-title">{{periodTitle}}</view>
+        <view class="muted period-hint">{{periodHint}}</view>
+      </view>
+      <button class="period-button next {{canGoNextPeriod ? '' : 'disabled'}}" data-offset="1" bindtap="changePeriod">›</button>
+    </view>
+
+    <view class="stats-grid">
+      <view wx:for="{{cards}}" wx:key="label" class="stats-card card">
+        <view class="stats-value">{{item.value}}</view>
+        <view class="muted">{{item.label}}</view>
+      </view>
+    </view>
+
+    <view class="section-title">标签时长</view>
+    <view class="tag-list card">
+      <block wx:if="{{hasTagStats}}">
+        <view wx:for="{{tagStats}}" wx:key="tag" class="tag-stat">
+          <view class="tag-row">
+            <view class="tag-name-wrap">
+              <text class="legend-dot" style="background: {{item.color}};"></text>
+              <text class="tag-name">{{item.tag}}</text>
+            </view>
+            <text class="tag-time">{{item.time}}</text>
+          </view>
+          <view class="bar">
+            <view class="bar-fill" style="width: {{item.percent}}%; background: {{item.color}};"></view>
+          </view>
+        </view>
+      </block>
+      <view wx:else class="stats-empty muted">当前时间范围内还没有计时专注记录</view>
+    </view>
+
+    <view class="section-title">标签占比</view>
+    <view class="pie-card card">
+      <view class="pie-chart" style="{{tagPieStyle}}">
+        <view class="pie-center">
+          <view class="pie-value">{{totalFocus}}</view>
+          <view class="muted">总专注</view>
+        </view>
+      </view>
+
+      <view class="pie-legend">
+        <block wx:if="{{hasTagStats}}">
+          <view wx:for="{{tagPieLegend}}" wx:key="tag" class="legend-item">
+            <view class="legend-main">
+              <text class="legend-dot" style="background: {{item.color}};"></text>
+              <text class="legend-name">{{item.tag}}</text>
+            </view>
+            <view class="legend-meta">{{item.share}} · {{item.time}}</view>
+          </view>
+        </block>
+        <view wx:else class="stats-empty muted">完成计时后这里会显示标签占比</view>
+      </view>
+    </view>
+  </view>
+</scroll-view>

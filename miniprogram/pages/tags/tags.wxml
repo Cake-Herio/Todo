@@ -1,0 +1,21 @@
+<navigation-bar title="标签管理" color="#2F3A34" background="#EDF4F0"></navigation-bar>
+
+<view class="page tags-page">
+  <view class="section-title">
+    <text>共用标签</text>
+    <text class="muted">两个人都可使用</text>
+  </view>
+  <view class="tag-card card">
+    <view wx:for="{{sharedTags}}" wx:key="*this" class="tag-chip shared">{{item}}</view>
+  </view>
+
+  <view class="section-title">
+    <text>私人标签</text>
+    <text class="muted">只有自己可见</text>
+  </view>
+  <view class="tag-card card">
+    <view wx:for="{{privateTags}}" wx:key="*this" class="tag-chip private">{{item}}</view>
+  </view>
+
+  <button class="add-button primary-button" bindtap="addTag">新增标签</button>
+</view>

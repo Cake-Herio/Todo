@@ -1,0 +1,373 @@
+<navigation-bar title="日计划" titleIcon="/images/icons/nav-day.svg" color="#2F3A34" background="#EDF4F0"></navigation-bar>
+
+<template name="planCard">
+  <view class="card-layout {{plan.remark ? 'has-remark' : 'no-remark'}} {{isTimed ? 'is-timed' : ''}}">
+    <view wx:if="{{showTime}}" class="card-time">{{plan.time}}</view>
+
+    <view class="card-title-section">
+      <view class="card-head">
+        <image class="card-avatar {{plan.color}}" src="{{plan.ownerAvatarUrl}}" mode="aspectFill"></image>
+        <text class="pill {{plan.color === 'blue' ? 'pill-blue' : ''}} card-tag-text">{{plan.tag}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{plan.remark}}" class="card-body">
+      <view class="card-body-inner">
+        <text class="card-remark">{{plan.remark}}</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<scroll-view class="scroll-page" scroll-y="{{!isPlanActionVisible}}" type="list">
+  <view class="page day-page">
+    <view class="day-header">
+      <view>
+        <view class="date-title">{{dateTitle}}</view>
+        <view class="muted">时间轴 · 时段 · 全天</view>
+      </view>
+    </view>
+
+    <view class="filter-row">
+      <view
+        wx:for="{{filters}}"
+        wx:key="key"
+        class="filter-chip avatar-filter {{activeFilter === item.key ? 'active' : ''}}"
+        data-filter="{{item.key}}"
+        bindtap="setFilter"
+      >
+        <view class="filter-avatars">
+          <image wx:for="{{item.avatars}}" wx:key="key" wx:for-item="avatar" class="filter-avatar {{avatar.key === 'partner' ? 'blue' : 'green'}}" src="{{avatar.url}}" mode="aspectFill"></image>
+        </view>
+        <text class="filter-label">{{item.label}}</text>
+      </view>
+    </view>
+
+    <view class="board-header-row">
+      <view class="board-header-spacer"></view>
+      <view class="board-header-col col-timed">具体时段</view>
+      <view class="board-header-col col-period">上午/下午/晚上</view>
+      <view class="board-header-col col-allday">全天</view>
+    </view>
+
+    <view class="day-board" style="height: {{boardHeight}}rpx;">
+      <view class="timeline-axis" style="height: {{boardHeight}}rpx;">
+        <view
+          wx:for="{{timelineMarkers}}"
+          wx:key="label"
+          class="timeline-marker"
+          style="top: {{item.top}}rpx;"
+        >
+          <view class="timeline-dot"></view>
+          <text class="timeline-label">{{item.label}}</text>
+        </view>
+        <view class="timeline-line"></view>
+      </view>
+
+      <view
+        wx:if="{{nowCursor.visible}}"
+        class="timeline-now"
+        style="top: {{nowCursor.top}}rpx;"
+      >
+        <view class="timeline-now-axis">
+          <view class="timeline-now-dot"></view>
+          <text class="timeline-now-label">{{nowCursor.label}}</text>
+        </view>
+        <view class="timeline-now-line"></view>
+      </view>
+
+      <view class="board-column col-timed">
+        <view class="column-body timed-body" style="height: {{boardHeight}}rpx;">
+          <view
+            wx:for="{{timedPlans}}"
+            wx:key="id"
+            class="board-card card timed-card {{item.isExpired ? 'expired' : item.color}}"
+            style="top: {{item.top}}rpx; height: {{item.height}}rpx; left: {{item.leftPercent}}%; width: {{item.widthPercent}}%;"
+            hover-class="board-card-active"
+            data-id="{{item.id}}"
+            bindtap="onPlanTap"
+          >
+            <template is="planCard" data="{{plan: item, showTime: true, isTimed: true}}" />
+          </view>
+          <view wx:if="{{timedPlans.length === 0}}" class="column-empty">无</view>
+        </view>
+      </view>
+
+      <view class="board-column col-period">
+        <view class="column-body period-body" style="height: {{boardHeight}}rpx;">
+          <view
+            class="period-zone morning-zone"
+            style="top: {{morningZone.top}}rpx; height: {{morningZone.height}}rpx;"
+          >
+            <view class="period-zone-label">上午</view>
+            <view class="period-cards">
+              <view
+                wx:for="{{morningPlans}}"
+                wx:key="id"
+                class="board-card card period-card {{item.isExpired ? 'expired' : item.color}}"
+                hover-class="board-card-active"
+                data-id="{{item.id}}"
+                bindtap="onPlanTap"
+              >
+                <template is="planCard" data="{{plan: item, showTime: false}}" />
+              </view>
+            </view>
+          </view>
+
+          <view
+            class="period-zone afternoon-zone"
+            style="top: {{afternoonZone.top}}rpx; height: {{afternoonZone.height}}rpx;"
+          >
+            <view class="period-zone-label">下午</view>
+            <view class="period-cards">
+              <view
+                wx:for="{{afternoonPlans}}"
+                wx:key="id"
+                class="board-card card period-card {{item.isExpired ? 'expired' : item.color}}"
+                hover-class="board-card-active"
+                data-id="{{item.id}}"
+                bindtap="onPlanTap"
+              >
+                <template is="planCard" data="{{plan: item, showTime: false}}" />
+              </view>
+            </view>
+          </view>
+
+          <view
+            class="period-zone evening-zone"
+            style="top: {{eveningZone.top}}rpx; height: {{eveningZone.height}}rpx;"
+          >
+            <view class="period-zone-label">晚上</view>
+            <view class="period-cards">
+              <view
+                wx:for="{{eveningPlans}}"
+                wx:key="id"
+                class="board-card card period-card {{item.isExpired ? 'expired' : item.color}}"
+                hover-class="board-card-active"
+                data-id="{{item.id}}"
+                bindtap="onPlanTap"
+              >
+                <template is="planCard" data="{{plan: item, showTime: false}}" />
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="board-column col-allday">
+        <view class="column-body allday-body" style="height: {{boardHeight}}rpx;">
+          <view class="allday-cards">
+            <view
+              wx:for="{{allDayPlans}}"
+              wx:key="id"
+              class="board-card card allday-card {{item.isExpired ? 'expired' : item.color}}"
+              hover-class="board-card-active"
+              data-id="{{item.id}}"
+              bindtap="onPlanTap"
+            >
+              <template is="planCard" data="{{plan: item, showTime: false}}" />
+            </view>
+            <view wx:if="{{allDayPlans.length === 0}}" class="column-empty">无</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</scroll-view>
+
+<view wx:if="{{isPlanActionVisible && activePlan}}" class="plan-action-mask" catchtap="closePlanAction" catchtouchmove="noop">
+  <view class="plan-action-panel" catchtap="noop">
+    <view class="plan-action-close" catchtap="closePlanAction">×</view>
+
+    <block wx:if="{{!isPlanEditVisible}}">
+      <view class="plan-action-title">{{activePlan.tag}}</view>
+      <view class="plan-action-subtitle muted">选择要进行的操作</view>
+
+      <view class="plan-action-preview card">
+        <view wx:if="{{activePlan.time}}" class="plan-preview-time">{{activePlan.time}}</view>
+        <view class="plan-preview-head">
+          <image class="card-avatar {{activePlan.color}}" src="{{activePlan.ownerAvatarUrl}}" mode="aspectFill"></image>
+          <text class="pill {{activePlan.color === 'blue' ? 'pill-blue' : ''}} plan-preview-tag">{{activePlan.tag}}</text>
+          <text class="plan-preview-status {{activePlan.status === '逾期' ? 'overdue' : ''}}">{{activePlan.status}}</text>
+        </view>
+        <view wx:if="{{activePlan.remark}}" class="plan-preview-remark">{{activePlan.remark}}</view>
+      </view>
+
+      <view class="plan-action-grid">
+        <button class="plan-action-btn secondary-button" bindtap="openPlanEdit">
+          <image class="plan-action-btn-icon" src="/images/icons/edit.svg" mode="aspectFit"></image>
+          <text>编辑计划</text>
+        </button>
+        <button class="plan-action-btn primary-button" bindtap="startPlanFocus">
+          <image class="plan-action-btn-icon" src="/images/icons/timer-white.svg" mode="aspectFit"></image>
+          <text>开始计时</text>
+        </button>
+        <button class="plan-action-btn secondary-button" bindtap="completeActivePlan">
+          <image class="plan-action-btn-icon" src="/images/icons/check.svg" mode="aspectFit"></image>
+          <text>标记完成</text>
+        </button>
+        <button class="plan-action-btn danger-button" bindtap="deleteActivePlan">
+          <image class="plan-action-btn-icon" src="/images/icons/delete.svg" mode="aspectFit"></image>
+          <text>删除计划</text>
+        </button>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="plan-action-title">编辑计划</view>
+      <view class="plan-action-subtitle muted">修改后保存即可更新日计划</view>
+
+      <scroll-view class="plan-edit-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+        <view class="plan-edit-form">
+          <view class="plan-form-label">归属成员</view>
+          <view class="plan-owner-row">
+            <view class="plan-owner-chip {{editPlanForm.ownerKey === 'me' ? 'active' : ''}}" data-owner="me" bindtap="chooseEditPlanOwner">
+              <image class="filter-avatar green" src="/assets/avatars/me.png" mode="aspectFill"></image>
+              <text>我</text>
+            </view>
+            <view class="plan-owner-chip {{editPlanForm.ownerKey === 'partner' ? 'active' : ''}}" data-owner="partner" bindtap="chooseEditPlanOwner">
+              <image class="filter-avatar blue" src="/assets/avatars/partner.png" mode="aspectFill"></image>
+              <text>对方</text>
+            </view>
+          </view>
+
+          <view class="plan-form-label">主题标签</view>
+          <view class="plan-tag-row">
+            <view
+              wx:for="{{quickTags}}"
+              wx:key="name"
+              class="plan-tag-chip {{editPlanForm.tag === item.name ? 'active' : ''}}"
+              data-tag="{{item.name}}"
+              bindtap="chooseEditPlanTag"
+            >
+              <text class="plan-tag-dot" style="background: {{item.color}};"></text>
+              {{item.name}}
+            </view>
+            <view class="plan-tag-add" bindtap="openTagCreateSheet">+</view>
+          </view>
+
+          <view class="plan-form-label">备注</view>
+          <textarea class="plan-form-textarea" value="{{editPlanForm.remark}}" data-field="remark" placeholder="补充计划细节" bindinput="onEditPlanInput" />
+
+          <view class="plan-form-label">日期</view>
+          <view class="plan-picker-field" bindtap="openDatePicker">
+            <text class="plan-picker-value">{{editPlanForm.date}}</text>
+            <text class="plan-picker-action">选择日期</text>
+          </view>
+
+          <view class="plan-form-label">计划性质</view>
+          <view class="schedule-kind-list">
+            <view
+              wx:for="{{scheduleKindOptions}}"
+              wx:key="key"
+              class="schedule-kind-card card {{editPlanForm.scheduleKind === item.key ? 'active' : ''}}"
+              data-kind="{{item.key}}"
+              bindtap="chooseScheduleKind"
+            >
+              <view class="schedule-kind-title">{{item.title}}</view>
+              <view class="schedule-kind-desc">{{item.desc}}</view>
+            </view>
+          </view>
+
+          <view class="plan-schedule-detail">
+          <block wx:if="{{editPlanForm.scheduleKind === 'timed'}}">
+            <view class="plan-time-row">
+              <view class="plan-time-item">
+                <view class="plan-form-label">开始时间</view>
+                <view class="plan-picker-field" bindtap="openStartTimePicker">
+                  <text class="plan-picker-value plan-picker-value-time">{{editPlanForm.startTime}}</text>
+                  <text class="plan-picker-action">选择</text>
+                </view>
+              </view>
+              <view class="plan-time-item">
+                <view class="plan-form-label">结束时间</view>
+                <view class="plan-picker-field" bindtap="openEndTimePicker">
+                  <text class="plan-picker-value plan-picker-value-time">{{editPlanForm.endTime}}</text>
+                  <text class="plan-picker-action">选择</text>
+                </view>
+              </view>
+            </view>
+          </block>
+
+          <block wx:elif="{{editPlanForm.scheduleKind === 'period'}}">
+            <view class="plan-form-label">时段</view>
+            <view class="plan-picker-field" bindtap="openPeriodPicker">
+              <text class="plan-picker-value">{{periodOptionLabels[editPlanForm.periodIndex]}}</text>
+              <text class="plan-picker-action">选择时段</text>
+            </view>
+          </block>
+
+          <block wx:else>
+            <view class="schedule-allday-card card">
+              <view class="schedule-allday-title">全天计划</view>
+              <view class="schedule-allday-desc">将显示在日计划右侧「全天」列，不占用具体时段。</view>
+            </view>
+          </block>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="plan-action-footer">
+        <button class="plan-action-btn primary-button" bindtap="savePlanEdit">保存修改</button>
+        <button class="plan-action-btn secondary-button" bindtap="closePlanEdit">返回</button>
+      </view>
+    </block>
+  </view>
+</view>
+
+<view wx:if="{{isPickerSheetVisible}}" class="plan-picker-sheet-mask" catchtap="closePickerSheet" catchtouchmove="noop">
+  <view class="plan-picker-sheet" catchtap="noop">
+    <view class="plan-picker-sheet-header">
+      <text class="plan-picker-sheet-btn" bindtap="closePickerSheet">取消</text>
+      <text class="plan-picker-sheet-title">{{pickerSheetTitle}}</text>
+      <text class="plan-picker-sheet-btn confirm" bindtap="confirmPickerSheet">确定</text>
+    </view>
+
+    <picker-view
+      wx:if="{{pickerSheetKind === 'date'}}"
+      class="plan-picker-wheel"
+      value="{{pickerTempValue}}"
+      bindchange="onPickerSheetChange"
+      indicator-class="plan-picker-indicator"
+    >
+      <picker-view-column>
+        <view wx:for="{{pickerYears}}" wx:key="*this" class="plan-picker-option">{{item}}年</view>
+      </picker-view-column>
+      <picker-view-column>
+        <view wx:for="{{pickerMonths}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+      <picker-view-column>
+        <view wx:for="{{pickerDayOptions}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+    </picker-view>
+
+    <picker-view
+      wx:elif="{{pickerSheetKind === 'time-start' || pickerSheetKind === 'time-end'}}"
+      class="plan-picker-wheel"
+      value="{{pickerTempValue}}"
+      bindchange="onPickerSheetChange"
+      indicator-class="plan-picker-indicator"
+    >
+      <picker-view-column>
+        <view wx:for="{{pickerHours}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+      <picker-view-column>
+        <view wx:for="{{pickerMinutes}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+    </picker-view>
+
+    <picker-view
+      wx:else
+      class="plan-picker-wheel"
+      value="{{pickerTempValue}}"
+      bindchange="onPickerSheetChange"
+      indicator-class="plan-picker-indicator"
+    >
+      <picker-view-column>
+        <view wx:for="{{periodOptionLabels}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+    </picker-view>
+  </view>
+</view>
+
+<tag-create-sheet visible="{{isTagCreateVisible}}" bind:close="closeTagCreateSheet" bind:confirm="onTagCreateConfirm" />

@@ -1,0 +1,64 @@
+<view wx:if="{{visible}}" class="tag-create-mask" catchtouchmove="noop">
+  <view class="tag-create-panel" catchtap="noop">
+    <view class="tag-create-header">
+      <view>
+        <view class="tag-create-title">新增主题</view>
+        <view class="tag-create-subtitle">设置名称和颜色</view>
+      </view>
+      <view class="tag-create-close" catchtap="closeSheet">×</view>
+    </view>
+
+    <view class="tag-create-label">主题名称</view>
+    <input
+      class="tag-create-input"
+      value="{{tagName}}"
+      maxlength="12"
+      placeholder="例如：冥想"
+      bindinput="onTagNameInput"
+    />
+
+    <view class="tag-create-label">颜色</view>
+    <view class="tag-color-preview-row">
+      <view class="tag-color-preview" style="background: {{tagColor}};"></view>
+      <input
+        class="tag-color-hex-input"
+        value="{{tagColor}}"
+        maxlength="7"
+        placeholder="#A9C7B5"
+        bindinput="onHexInput"
+      />
+    </view>
+
+    <view class="tag-color-palette">
+      <view
+        wx:for="{{paletteColors}}"
+        wx:key="*this"
+        class="tag-color-swatch {{tagColor === item ? 'active' : ''}}"
+        style="background: {{item}};"
+        data-color="{{item}}"
+        catchtap="choosePaletteColor"
+      ></view>
+    </view>
+
+    <view class="tag-create-label">色相</view>
+    <view class="tag-hue-slider-wrap">
+      <slider
+        class="tag-hue-slider"
+        min="0"
+        max="360"
+        step="1"
+        value="{{hueValue}}"
+        activeColor="{{tagColor}}"
+        backgroundColor="#E9F2ED"
+        block-size="22"
+        bindchanging="onHueChanging"
+        bindchange="onHueChange"
+      />
+    </view>
+
+    <view class="tag-create-actions">
+      <button class="tag-create-cancel secondary-button" catchtap="closeSheet">取消</button>
+      <button class="tag-create-confirm primary-button" catchtap="confirmSheet">添加</button>
+    </view>
+  </view>
+</view>

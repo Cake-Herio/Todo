@@ -1,0 +1,3 @@
+<view class="voice-live-text {{voiceText ? 'has-text' : ''}}">
+  {{voiceText || placeholder}}
+</view>

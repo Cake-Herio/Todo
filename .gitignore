@@ -1,0 +1,7 @@
+node_modules/
+miniprogram_npm/
+dist/
+.DS_Store
+
+# WeChat DevTools local/private settings
+project.private.config.json

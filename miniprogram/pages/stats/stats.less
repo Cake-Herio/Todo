@@ -1,0 +1,265 @@
+.stats-page {
+  padding-bottom: 150rpx;
+}
+
+.stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0 18rpx;
+}
+
+.stats-range-switch-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 22rpx;
+}
+
+.stats-range-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  width: 100%;
+  height: 76rpx;
+  padding: 6rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 253, 247, 0.96);
+  box-shadow: 0 8rpx 24rpx rgba(62, 94, 72, 0.1);
+  box-sizing: border-box;
+}
+
+.stats-range-switch-thumb {
+  position: absolute;
+  top: 6rpx;
+  left: 6rpx;
+  width: calc((100% - 12rpx) / 4);
+  height: calc(100% - 12rpx);
+  border-radius: 999rpx;
+  background: #A9C7B5;
+  box-shadow: 0 8rpx 20rpx rgba(169, 199, 181, 0.28);
+  transition: transform 0.24s ease;
+}
+
+.stats-range-switch-item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7a857d;
+  font-size: 26rpx;
+  font-weight: 700;
+  transition: color 0.24s ease;
+}
+
+.stats-range-switch-item.active {
+  color: #fff;
+}
+
+.stats-period-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 22rpx;
+  padding: 0 6rpx;
+}
+
+.period-main {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.period-title {
+  font-size: 36rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.period-hint {
+  min-height: 32rpx;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+}
+
+.period-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56rpx;
+  min-width: 56rpx;
+  height: 56rpx;
+  flex: 0 0 56rpx;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 253, 247, 0.78);
+  color: #8AA394;
+  font-size: 34rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 8rpx 22rpx rgba(138, 163, 148, 0.08);
+}
+
+.period-button:active {
+  background: #E9F2ED;
+  transform: scale(0.94);
+}
+
+.period-button.disabled {
+  color: rgba(138, 163, 148, 0.28);
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.stats-title {
+  font-size: 42rpx;
+  font-weight: 800;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16rpx;
+}
+
+.stats-card {
+  padding: 24rpx 12rpx;
+  text-align: center;
+}
+
+.stats-value {
+  margin-bottom: 8rpx;
+  color: #8AA394;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.tag-list {
+  padding: 24rpx;
+}
+
+.tag-stat + .tag-stat {
+  margin-top: 26rpx;
+}
+
+.tag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.tag-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.tag-name {
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.tag-time {
+  color: #8AA394;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.bar {
+  height: 16rpx;
+  border-radius: 999rpx;
+  background: #E9F2ED;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #A9C7B5, #C5DDD0);
+}
+
+.pie-card {
+  display: flex;
+  align-items: center;
+  gap: 30rpx;
+  padding: 30rpx;
+}
+
+.pie-chart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 220rpx;
+  height: 220rpx;
+  flex: 0 0 220rpx;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1rpx rgba(255, 255, 255, 0.4);
+}
+
+.pie-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 50%;
+  background: #fffdf7;
+}
+
+.pie-value {
+  color: #2f3a34;
+  font-size: 26rpx;
+  font-weight: 900;
+}
+
+.pie-legend {
+  flex: 1;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.legend-item + .legend-item {
+  margin-top: 22rpx;
+}
+
+.legend-main {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.legend-dot {
+  display: inline-flex;
+  width: 18rpx;
+  height: 18rpx;
+  flex: 0 0 18rpx;
+  border-radius: 50%;
+}
+
+.legend-name {
+  color: #2f3a34;
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.legend-meta {
+  color: #6e7b71;
+  font-size: 24rpx;
+  white-space: nowrap;
+}
+
+.stats-empty {
+  padding: 12rpx 0;
+  font-size: 26rpx;
+  line-height: 1.5;
+  text-align: center;
+}

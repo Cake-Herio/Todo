@@ -1,0 +1,89 @@
+<view class="focus-page-bg"></view>
+
+<page-container
+  show="{{backGuardShow}}"
+  overlay="{{false}}"
+  position="center"
+  duration="{{0}}"
+  custom-style="width:100%;height:100vh;background:#faf9f6;"
+  bind:beforeleave="onBackGuardLeave"
+  bind:afterleave="onBackGuardAfterLeave"
+>
+  <view class="focus-shell">
+    <navigation-bar title="专注计时" back="{{canLeave}}" color="#6B8575" background="#FAF9F6"></navigation-bar>
+
+    <view class="focus-page">
+      <view class="focus-bg" aria-hidden="true">
+        <view class="focus-leaf focus-leaf-tr"></view>
+        <view class="focus-leaf focus-leaf-bl"></view>
+      </view>
+
+      <view class="focus-stage">
+        <view class="timer-ring">
+          <view class="ring-track"></view>
+          <view class="ring-dot-orbit" style="transform: rotate({{ringAngle}}deg);">
+            <view class="ring-dot"></view>
+          </view>
+          <view class="ring-glow {{isPaused ? 'is-paused' : ''}}"></view>
+          <view class="ring-center">
+            <text class="tree-label">树</text>
+            <text class="time-display">{{timeText}}</text>
+            <text class="time-hint">{{hintText}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="focus-controls">
+        <block wx:if="{{!isRunning}}">
+          <view class="control-item control-item-single" bindtap="startTimer">
+            <view class="control-circle control-circle-primary">
+              <view class="icon-play"></view>
+            </view>
+            <text class="control-label">开始</text>
+          </view>
+        </block>
+        <block wx:else>
+          <view class="control-item" bindtap="togglePause">
+            <view class="control-circle control-circle-outline">
+              <view wx:if="{{isPaused}}" class="icon-play icon-play-dark"></view>
+              <view wx:else class="icon-pause"></view>
+            </view>
+            <text class="control-label">{{isPaused ? '继续' : '暂停'}}</text>
+          </view>
+          <view class="control-item" bindtap="finishFocus">
+            <view class="control-circle control-circle-primary">
+              <view class="icon-stop"></view>
+            </view>
+            <text class="control-label">结束</text>
+          </view>
+        </block>
+      </view>
+
+      <view wx:if="{{isFinishPanelVisible}}" class="finish-mask" catchtouchmove="noop">
+        <view class="finish-panel">
+          <view class="finish-title">这次完成了什么？</view>
+          <view class="finish-muted">选择标签，详情可以打字或后续接语音输入</view>
+
+          <view class="finish-tags">
+            <view
+              wx:for="{{tags}}"
+              wx:key="*this"
+              class="finish-tag {{selectedTag === item ? 'active' : ''}}"
+              data-tag="{{item}}"
+              bindtap="selectTag"
+            >
+              {{item}}
+            </view>
+          </view>
+
+          <textarea class="detail-input" value="{{detail}}" placeholder="具体做了什么？例如：背完 Unit 3 单词" bindinput="onDetailInput"></textarea>
+
+          <view class="finish-actions">
+            <button class="finish-button secondary-button" bindtap="closeFinishPanel">先不记录</button>
+            <button class="finish-button primary-button" bindtap="saveCompletion">保存记录</button>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</page-container>

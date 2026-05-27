@@ -1,0 +1,21 @@
+<navigation-bar title="设置" color="#2F3A34" background="#EDF4F0"></navigation-bar>
+
+<view class="page settings-page">
+  <view class="profile card">
+    <view class="avatar">林</view>
+    <view>
+      <view class="profile-name">林间伙伴</view>
+      <view class="muted">邀请码：{{inviteCode}}</view>
+    </view>
+  </view>
+
+  <view class="settings-list card">
+    <view wx:for="{{items}}" wx:key="label" class="settings-item" data-label="{{item.label}}" bindtap="onItemTap">
+      <view>
+        <view class="item-label">{{item.label}}</view>
+        <view class="muted">{{item.desc}}</view>
+      </view>
+      <text class="arrow">›</text>
+    </view>
+  </view>
+</view>

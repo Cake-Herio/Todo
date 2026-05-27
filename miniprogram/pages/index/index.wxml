@@ -1,0 +1,321 @@
+<navigation-bar extClass="home-nav-bar" title="MyForest" back="{{false}}" color="#6B8575" background="#FAF9F6">
+  <view slot="left" class="nav-settings-btn" bindtap="goSettings">
+    <image class="nav-settings-icon" src="/images/icons/setting.svg" mode="aspectFit"></image>
+  </view>
+</navigation-bar>
+
+<scroll-view class="scroll-page home-scroll" scroll-y="{{!isRecording && !isAiDraftVisible && !isPickerSheetVisible && !isAiProcessing && !isTagCreateVisible}}" type="list">
+  <view class="page home">
+    <view class="hero">
+      <view class="hero-main">
+        <view class="hero-date">{{today}}</view>
+        <view class="hero-title">你好，{{nickname}}</view>
+        <view class="hero-subtitle">今天也慢慢种一棵树</view>
+      </view>
+      <view class="hero-tree-wrap">
+        <image wx:if="{{heroTreeSrc}}" class="hero-tree" src="{{heroTreeSrc}}" mode="aspectFit"></image>
+        <view wx:else class="hero-tree hero-tree-fallback" aria-hidden="true">
+          <view class="hero-tree-hill"></view>
+          <view class="hero-tree-crown"></view>
+        </view>
+      </view>
+    </view>
+
+    <view class="companion-live card">
+      <view class="companion-avatar-wrap">
+        <view class="companion-breathe-ring companion-breathe-ring-a"></view>
+        <view class="companion-breathe-ring companion-breathe-ring-b"></view>
+        <view class="companion-avatar-ring"></view>
+        <image class="companion-avatar" src="{{partner.avatarUrl}}" mode="aspectFill"></image>
+      </view>
+      <view class="companion-live-main">
+        <view class="companion-live-title">{{partner.name}} · {{partner.status}}</view>
+        <view class="companion-live-desc">{{partner.focus}} · {{partner.duration}}</view>
+      </view>
+    </view>
+
+    <view class="home-section">
+      <view class="home-section-title">临近计划</view>
+
+      <view wx:if="{{nextPlans.length}}" class="plan-list">
+        <view wx:for="{{nextPlans}}" wx:key="id" class="plan-card card" bindtap="goDay">
+          <image class="plan-owner-avatar {{item.color}}" src="{{item.ownerAvatarUrl}}" mode="aspectFill"></image>
+          <view class="plan-main">
+            <view class="plan-title">{{item.title}}</view>
+            <view class="plan-meta">{{item.time}} · {{item.hint}}</view>
+          </view>
+          <view class="plan-status plan-status-{{item.statusClass}}">{{item.statusLabel}}</view>
+        </view>
+      </view>
+
+      <view wx:else class="plan-empty">今天暂无临近计划</view>
+    </view>
+
+    <view hidden="{{!isRecording}}" class="voice-mask {{isVoiceCancelling ? 'cancelling' : ''}}" catchtouchmove="onVoiceMove">
+      <view class="voice-panel">
+        <view class="mic-circle">
+          <view class="mic-head"></view>
+          <view class="mic-line"></view>
+        </view>
+        <view class="wave-row">
+          <view class="wave-bar bar-1"></view>
+          <view class="wave-bar bar-2"></view>
+          <view class="wave-bar bar-3"></view>
+          <view class="wave-bar bar-4"></view>
+          <view class="wave-bar bar-5"></view>
+        </view>
+        <view class="record-title">{{isVoiceCancelling ? '松开取消' : (voiceMode === 'refine' ? '正在听修改意见' : '正在听你说计划')}}</view>
+        <voice-live-text id="voice-live-text" />
+        <view class="record-tip">{{isVoiceCancelling ? '回到下方继续录音' : '松开发送，上滑取消'}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{isAiProcessing}}" class="voice-mask ai-processing-mask" catchtouchmove="noop">
+      <view class="voice-panel">
+        <view class="processing-ring"></view>
+        <view class="record-title">{{aiProcessingTitle}}</view>
+        <view class="voice-processing-text">{{aiProcessingText}}</view>
+        <view class="record-tip">正在整理，请稍候...</view>
+      </view>
+    </view>
+
+    <view wx:if="{{isAiDraftVisible}}" class="ai-draft-mask" catchtouchmove="noop">
+      <view class="ai-draft-panel" catchtap="noop">
+        <block wx:if="{{!isAiDraftEditVisible}}">
+          <view class="ai-draft-header">
+            <view>
+              <view class="ai-draft-title">生成计划草稿</view>
+              <view class="muted">确认后会加入日历，可在日计划里继续调整</view>
+            </view>
+            <view class="ai-draft-close" catchtap="closeAiDraft">×</view>
+          </view>
+
+          <scroll-view class="ai-draft-list" scroll-y>
+            <view wx:for="{{aiDraftCards}}" wx:key="id" class="ai-draft-card">
+              <view class="ai-draft-top-row">
+                <view class="ai-draft-meta-row">
+                  <view class="ai-draft-tag">{{item.tag}}</view>
+                  <view class="ai-draft-date">{{item.dateLabel}}</view>
+                  <view class="ai-draft-time">{{item.timeLabel}}</view>
+                </view>
+                <view class="ai-draft-card-actions">
+                  <view class="ai-draft-icon-btn" catchtap="openAiDraftEdit" data-id="{{item.id}}">
+                    <image class="ai-draft-icon" src="/images/icons/edit.svg" mode="aspectFit"></image>
+                  </view>
+                  <view class="ai-draft-icon-btn danger" catchtap="deleteAiDraft" data-id="{{item.id}}">
+                    <image class="ai-draft-icon" src="/images/icons/delete.svg" mode="aspectFit"></image>
+                  </view>
+                </view>
+              </view>
+              <view class="ai-draft-remark">{{item.remark}}</view>
+            </view>
+          </scroll-view>
+
+          <view class="ai-draft-actions">
+            <button
+              class="ai-draft-action-button secondary-button {{isRecording && voiceMode === 'refine' ? 'recording' : ''}}"
+              bindtouchstart="onDraftRefineVoiceStart"
+              bindtouchend="onDraftRefineVoiceEnd"
+              bindtouchcancel="onDraftRefineVoiceCancel"
+              catchtouchmove="onDraftRefineVoiceMove"
+            >
+              <view class="ai-draft-action-label">
+                <text class="ai-draft-action-title">{{isRecording && voiceMode === 'refine' ? '松开调整' : '继续调整'}}</text>
+                <text class="ai-draft-action-subtitle">长按说出修改意见</text>
+              </view>
+            </button>
+            <button class="ai-draft-action-button primary-button" bindtap="confirmAiDrafts">
+              <text class="ai-draft-action-title">加入日历</text>
+            </button>
+          </view>
+        </block>
+
+        <block wx:else>
+          <view class="ai-draft-header">
+            <view>
+              <view class="ai-draft-title">编辑计划草稿</view>
+              <view class="muted">修改后保存即可更新草稿</view>
+            </view>
+            <view class="ai-draft-close" catchtap="closeAiDraftEdit">×</view>
+          </view>
+
+          <scroll-view class="plan-edit-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+            <view class="plan-edit-form">
+              <view class="plan-form-label">归属成员</view>
+              <view class="plan-owner-row">
+                <view class="plan-owner-chip {{editPlanForm.ownerKey === 'me' ? 'active' : ''}}" data-owner="me" bindtap="chooseEditPlanOwner">
+                  <image class="filter-avatar green" src="/assets/avatars/me.png" mode="aspectFill"></image>
+                  <text>我</text>
+                </view>
+                <view class="plan-owner-chip {{editPlanForm.ownerKey === 'partner' ? 'active' : ''}}" data-owner="partner" bindtap="chooseEditPlanOwner">
+                  <image class="filter-avatar blue" src="/assets/avatars/partner.png" mode="aspectFill"></image>
+                  <text>对方</text>
+                </view>
+              </view>
+
+              <view class="plan-form-label">主题标签</view>
+              <view class="plan-tag-row">
+                <view
+                  wx:for="{{quickTags}}"
+                  wx:key="name"
+                  class="plan-tag-chip {{editPlanForm.tag === item.name ? 'active' : ''}}"
+                  data-tag="{{item.name}}"
+                  bindtap="chooseEditPlanTag"
+                >
+                  <text class="plan-tag-dot" style="background: {{item.color}};"></text>
+                  {{item.name}}
+                </view>
+                <view class="plan-tag-add" bindtap="openTagCreateSheet">+</view>
+              </view>
+
+              <view class="plan-form-label">备注</view>
+              <textarea class="plan-form-textarea" value="{{editPlanForm.remark}}" data-field="remark" placeholder="补充计划细节" bindinput="onEditPlanInput" />
+
+              <view class="plan-form-label">日期</view>
+              <view class="plan-picker-field" bindtap="openDatePicker">
+                <text class="plan-picker-value">{{editPlanForm.date}}</text>
+                <text class="plan-picker-action">选择日期</text>
+              </view>
+
+              <view class="plan-form-label">计划性质</view>
+              <view class="schedule-kind-list">
+                <view
+                  wx:for="{{scheduleKindOptions}}"
+                  wx:key="key"
+                  class="schedule-kind-card card {{editPlanForm.scheduleKind === item.key ? 'active' : ''}}"
+                  data-kind="{{item.key}}"
+                  bindtap="chooseScheduleKind"
+                >
+                  <view class="schedule-kind-title">{{item.title}}</view>
+                  <view class="schedule-kind-desc">{{item.desc}}</view>
+                </view>
+              </view>
+
+              <view class="plan-schedule-detail">
+              <block wx:if="{{editPlanForm.scheduleKind === 'timed'}}">
+                <view class="plan-time-row">
+                  <view class="plan-time-item">
+                    <view class="plan-form-label">开始时间</view>
+                    <view class="plan-picker-field" bindtap="openStartTimePicker">
+                      <text class="plan-picker-value plan-picker-value-time">{{editPlanForm.startTime}}</text>
+                      <text class="plan-picker-action">选择</text>
+                    </view>
+                  </view>
+                  <view class="plan-time-item">
+                    <view class="plan-form-label">结束时间</view>
+                    <view class="plan-picker-field" bindtap="openEndTimePicker">
+                      <text class="plan-picker-value plan-picker-value-time">{{editPlanForm.endTime}}</text>
+                      <text class="plan-picker-action">选择</text>
+                    </view>
+                  </view>
+                </view>
+              </block>
+
+              <block wx:elif="{{editPlanForm.scheduleKind === 'period'}}">
+                <view class="plan-form-label">时段</view>
+                <view class="plan-picker-field" bindtap="openPeriodPicker">
+                  <text class="plan-picker-value">{{periodOptionLabels[editPlanForm.periodIndex]}}</text>
+                  <text class="plan-picker-action">选择时段</text>
+                </view>
+              </block>
+
+              <block wx:else>
+                <view class="schedule-allday-card card">
+                  <view class="schedule-allday-title">全天计划</view>
+                  <view class="schedule-allday-desc">将显示在日计划右侧「全天」列，不占用具体时段。</view>
+                </view>
+              </block>
+              </view>
+            </view>
+          </scroll-view>
+
+          <view class="ai-draft-actions ai-draft-edit-actions">
+            <button class="ai-draft-secondary secondary-button" bindtap="closeAiDraftEdit">返回</button>
+            <button class="ai-draft-primary primary-button" bindtap="saveAiDraftEdit">保存修改</button>
+          </view>
+        </block>
+      </view>
+    </view>
+  </view>
+</scroll-view>
+
+<view class="action-grid">
+  <button
+    class="action-card voice-button {{isRecording ? 'recording' : ''}}"
+    bindtouchstart="onVoiceStart"
+    bindtouchend="onVoiceEnd"
+    bindtouchcancel="onVoiceCancel"
+    catchtouchmove="onVoiceMove"
+  >
+    <view class="action-icon action-icon-list"></view>
+    <view class="action-copy">
+      <view class="action-title">计划表</view>
+      <view class="action-subtitle">{{isRecording ? '松开生成计划草稿' : '长按说话微计划'}}</view>
+    </view>
+  </button>
+
+  <button class="action-card focus-button" bindtap="goFocus">
+    <view class="action-icon action-icon-clock"></view>
+    <view class="action-copy">
+      <view class="action-title">开始计时</view>
+      <view class="action-subtitle">正计时专注</view>
+    </view>
+  </button>
+</view>
+
+<view wx:if="{{isPickerSheetVisible}}" class="plan-picker-sheet-mask" catchtap="closePickerSheet" catchtouchmove="noop">
+  <view class="plan-picker-sheet" catchtap="noop">
+    <view class="plan-picker-sheet-header">
+      <text class="plan-picker-sheet-btn" bindtap="closePickerSheet">取消</text>
+      <text class="plan-picker-sheet-title">{{pickerSheetTitle}}</text>
+      <text class="plan-picker-sheet-btn confirm" bindtap="confirmPickerSheet">确定</text>
+    </view>
+
+    <picker-view
+      wx:if="{{pickerSheetKind === 'date'}}"
+      class="plan-picker-wheel"
+      value="{{pickerTempValue}}"
+      bindchange="onPickerSheetChange"
+      indicator-class="plan-picker-indicator"
+    >
+      <picker-view-column>
+        <view wx:for="{{pickerYears}}" wx:key="*this" class="plan-picker-option">{{item}}年</view>
+      </picker-view-column>
+      <picker-view-column>
+        <view wx:for="{{pickerMonths}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+      <picker-view-column>
+        <view wx:for="{{pickerDayOptions}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+    </picker-view>
+
+    <picker-view
+      wx:elif="{{pickerSheetKind === 'time-start' || pickerSheetKind === 'time-end'}}"
+      class="plan-picker-wheel"
+      value="{{pickerTempValue}}"
+      bindchange="onPickerSheetChange"
+      indicator-class="plan-picker-indicator"
+    >
+      <picker-view-column>
+        <view wx:for="{{pickerHours}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+      <picker-view-column>
+        <view wx:for="{{pickerMinutes}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+    </picker-view>
+
+    <picker-view
+      wx:else
+      class="plan-picker-wheel"
+      value="{{pickerTempValue}}"
+      bindchange="onPickerSheetChange"
+      indicator-class="plan-picker-indicator"
+    >
+      <picker-view-column>
+        <view wx:for="{{periodOptionLabels}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+      </picker-view-column>
+    </picker-view>
+  </view>
+</view>
+
+<tag-create-sheet visible="{{isTagCreateVisible}}" bind:close="closeTagCreateSheet" bind:confirm="onTagCreateConfirm" />

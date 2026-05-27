@@ -1,0 +1,40 @@
+<navigation-bar title="已完成" back="{{false}}" color="#2F3A34" background="#EDF4F0"></navigation-bar>
+
+<scroll-view class="scroll-page" scroll-y type="list">
+  <view class="page completed-page">
+    <view class="summary-card card">
+      <view>
+        <view class="summary-title">今日完成</view>
+        <view class="muted">计时和手动完成都会记录在这里</view>
+      </view>
+      <view class="summary-number">3</view>
+    </view>
+
+    <view class="filter-row">
+      <view
+        wx:for="{{filters}}"
+        wx:key="*this"
+        class="filter-chip {{activeFilter === item ? 'active' : ''}}"
+        data-filter="{{item}}"
+        bindtap="setFilter"
+      >
+        {{item}}
+      </view>
+    </view>
+
+    <view class="section-title">5月22日</view>
+    <view class="record-list">
+      <view wx:for="{{records}}" wx:key="detail" class="record-card card">
+        <view class="record-main">
+          <view class="record-title">
+            <text>{{item.tag}}</text>
+            <text wx:if="{{item.overdue}}" class="pill pill-red">逾期完成</text>
+          </view>
+          <view class="record-detail">{{item.detail}}</view>
+          <view class="muted">{{item.user}} · {{item.time}} · {{item.type}}</view>
+        </view>
+        <view class="duration">{{item.duration}}</view>
+      </view>
+    </view>
+  </view>
+</scroll-view>

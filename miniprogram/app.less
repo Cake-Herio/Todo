@@ -1,0 +1,99 @@
+/**app.wxss**/
+@serif-font: "Songti SC", "STSong", "SimSun", serif;
+
+page,
+view,
+text,
+button,
+input,
+textarea {
+  font-family: @serif-font;
+}
+
+page {
+  min-height: 100vh;
+  background: #f7f3ea;
+  color: #2f3a34;
+}
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 0 28rpx 32rpx;
+  background: linear-gradient(180deg, #EDF4F0 0%, #f7f3ea 360rpx);
+}
+
+.scroll-page {
+  height: calc(100vh - 1px);
+}
+
+.card {
+  border-radius: 28rpx;
+  background: rgba(255, 253, 247, 0.94);
+  box-shadow: 0 16rpx 38rpx rgba(62, 94, 72, 0.08);
+  box-sizing: border-box;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 32rpx 0 18rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #2f3a34;
+}
+
+.muted {
+  color: #7a857d;
+  font-size: 24rpx;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  background: #E9F2ED;
+  color: #8AA394;
+  font-size: 22rpx;
+}
+
+.pill-blue {
+  background: #e9f1fb;
+  color: #5d8cc3;
+}
+
+.pill-red {
+  background: #fdeaea;
+  color: #d96565;
+}
+
+.primary-button,
+.secondary-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  font-weight: 700;
+  border: 0;
+  box-sizing: border-box;
+}
+
+.primary-button {
+  background: #A9C7B5;
+  color: #fff;
+  box-shadow: 0 14rpx 28rpx rgba(169, 199, 181, 0.22);
+}
+
+.secondary-button {
+  background: #fffdf7;
+  color: #8AA394;
+  border: 2rpx solid #D9E8E0;
+}
+
+button::after {
+  border: 0;
+}

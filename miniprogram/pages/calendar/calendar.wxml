@@ -1,0 +1,109 @@
+<view class="calendar-page-root">
+  <navigation-bar extClass="calendar-nav-bar" title="日历" back="{{false}}" color="#2F3A34" background="#EDF4F0"></navigation-bar>
+
+  <view class="calendar-nav-gap"></view>
+
+  <view class="calendar-shell page">
+    <view class="calendar-header">
+      <button class="month-button prev" data-offset="-1" bindtap="changeMonth">‹</button>
+      <view bindtap="openMonthPicker">
+        <view class="month-title">{{monthTitle}}</view>
+        <view class="muted">{{calendarHint}}</view>
+      </view>
+      <button class="month-button next" data-offset="1" bindtap="changeMonth">›</button>
+    </view>
+
+    <view class="filter-row">
+      <view
+        wx:for="{{filters}}"
+        wx:key="key"
+        class="filter-chip avatar-filter {{activeFilter === item.key ? 'active' : ''}}"
+        data-filter="{{item.key}}"
+        bindtap="setFilter"
+      >
+        <view class="filter-avatars">
+          <image wx:for="{{item.avatars}}" wx:key="key" wx:for-item="avatar" class="filter-avatar {{avatar.key === 'partner' ? 'blue' : 'green'}}" src="{{avatar.url}}" mode="aspectFill"></image>
+        </view>
+        <text class="filter-label">{{item.label}}</text>
+      </view>
+    </view>
+
+    <view class="calendar-view-switch-wrap">
+      <view class="calendar-view-switch">
+        <view class="calendar-view-switch-thumb {{viewMode === 'completed' ? 'is-right' : ''}}"></view>
+        <view
+          class="calendar-view-switch-item {{viewMode === 'plan' ? 'active' : ''}}"
+          data-mode="plan"
+          bindtap="switchViewMode"
+        >
+          <image
+            class="calendar-view-switch-icon"
+            src="{{viewMode === 'plan' ? '/images/icons/switch-plan-white.svg' : '/images/tabbar/calendar.svg'}}"
+            mode="aspectFit"
+          ></image>
+          <text>计划</text>
+        </view>
+        <view
+          class="calendar-view-switch-item {{viewMode === 'completed' ? 'active' : ''}}"
+          data-mode="completed"
+          bindtap="switchViewMode"
+        >
+          <image
+            class="calendar-view-switch-icon"
+            src="{{viewMode === 'completed' ? '/images/icons/switch-completed-white.svg' : '/images/tabbar/completed.svg'}}"
+            mode="aspectFit"
+          ></image>
+          <text>完成</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="calendar-card card">
+      <view class="weekday-row">
+        <view wx:for="{{weekdays}}" wx:key="*this" class="weekday">{{item}}</view>
+      </view>
+
+      <view class="day-grid">
+        <view wx:for="{{days}}" wx:key="date" class="day-cell {{item.muted ? 'muted-day' : ''}} {{item.selected ? 'selected' : ''}}" data-date="{{item.date}}" bindtap="goDay">
+          <view class="day-top">
+            <text class="day-number">{{item.day}}</text>
+            <text wx:if="{{item.more}}" class="mini-more-badge">+{{item.more}}</text>
+          </view>
+          <view class="mini-plans">
+            <view wx:for="{{item.plans}}" wx:key="id" wx:for-item="plan" class="mini-plan {{plan.tone}}">
+              <image class="mini-avatar {{plan.tone === 'gray' ? 'gray' : plan.tone}}" src="{{plan.avatarUrl}}" mode="aspectFill"></image>
+              <text class="mini-tag">{{plan.tag}}</text>
+              <image wx:if="{{plan.isCompleted}}" class="mini-check" src="/images/icons/check.svg" mode="aspectFit"></image>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view
+    wx:if="{{isMonthPickerVisible}}"
+    class="picker-mask {{isMonthPickerClosing ? 'is-closing' : ''}}"
+    catchtap="closeMonthPicker"
+    catchtouchmove="noop"
+  >
+    <view class="picker-panel {{isMonthPickerClosing ? 'is-closing' : ''}}" catchtap="noop">
+      <view class="picker-close" catchtap="closeMonthPicker">×</view>
+      <view class="picker-header">
+        <view class="picker-title">切换月份</view>
+        <view class="muted">{{pickerYear}} 年 {{pickerMonth + 1}} 月</view>
+      </view>
+
+      <picker-view class="month-picker" value="{{pickerValue}}" bindchange="onPickerChange" indicator-class="picker-indicator">
+        <picker-view-column>
+          <view wx:for="{{years}}" wx:key="*this" class="picker-option">{{item}} 年</view>
+        </picker-view-column>
+        <picker-view-column>
+          <view wx:for="{{months}}" wx:key="*this" class="picker-option">{{item}}</view>
+        </picker-view-column>
+      </picker-view>
+
+      <button class="picker-confirm primary-button" bindtap="confirmMonthPicker">确认切换</button>
+    </view>
+  </view>
+</view>
