@@ -1,0 +1,88 @@
+@import '../day/day.less';
+
+.completed-day-scroll {
+  height: 100vh;
+}
+
+.completed-day-page {
+  padding-bottom: 56rpx;
+}
+
+.completed-day-back:active {
+  opacity: 0.72;
+}
+
+.dual-board {
+  display: flex;
+  gap: 10rpx;
+  margin-top: 8rpx;
+}
+
+.half-board {
+  flex: 1;
+  min-width: 0;
+}
+
+.half-header {
+  margin-bottom: 10rpx;
+  color: #7FB592;
+  font-size: 22rpx;
+  font-weight: 700;
+  text-align: center;
+}
+
+.half-body {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 4rpx;
+  overflow: visible;
+}
+
+.half-column {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.half-body .timeline-axis {
+  flex: 0 0 44rpx;
+  width: 44rpx;
+}
+
+.half-body .timeline-label {
+  right: 18rpx;
+  font-size: 16rpx;
+}
+
+.half-body .timeline-dot {
+  width: 8rpx;
+  height: 8rpx;
+  margin-right: 6rpx;
+}
+
+.half-body .timeline-now-axis {
+  flex: 0 0 44rpx;
+  width: 44rpx;
+}
+
+.half-body .timeline-now-label {
+  right: 20rpx;
+  font-size: 16rpx;
+}
+
+.half-body .timeline-now-dot {
+  right: 6rpx;
+  width: 12rpx;
+  height: 12rpx;
+}
+
+.column-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: #b8c0ba;
+  font-size: 22rpx;
+  transform: translate(-50%, -50%);
+}

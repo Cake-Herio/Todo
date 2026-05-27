@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "envId": "cloudbase-d4gssgn9yb53a9fc0",
+  "functionRoot": "./cloudfunctions",
+  "functions": [
+    {
+      "name": "verifyInvite",
+      "timeout": 10,
+      "runtime": "Nodejs16.13",
+      "installDependency": true,
+      "handler": "index.main"
+    }
+  ]
+}

@@ -14,7 +14,7 @@
     },
     "coverView": false,
     "postcss": false,
-    "minified": false,
+    "minified": true,
     "enhance": true,
     "showShadowRootInWxmlPanel": false,
     "packNpmRelationList": [],
@@ -24,7 +24,7 @@
     "es6": true,
     "compileWorklet": false,
     "uglifyFileName": false,
-    "uploadWithSourceMap": true,
+    "uploadWithSourceMap": false,
     "packNpmManually": false,
     "minifyWXSS": true,
     "minifyWXML": true,
@@ -44,8 +44,80 @@
   },
   "libVersion": "3.16.0",
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "pages/example"
+      },
+      {
+        "type": "folder",
+        "value": "components/cloudTipModal"
+      },
+      {
+        "type": "file",
+        "value": "envList.js"
+      },
+      {
+        "type": "file",
+        "value": "images/ai_example2.png"
+      },
+      {
+        "type": "file",
+        "value": "images/cloud_dev.png"
+      },
+      {
+        "type": "file",
+        "value": "images/avatar.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/avatar.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/examples.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/examples-active.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/goods.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/goods-active.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/business.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/business-active.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/home.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/home-active.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/usercenter.png"
+      },
+      {
+        "type": "file",
+        "value": "images/icons/usercenter-active.png"
+      }
+    ],
     "include": []
   },
-  "appid": "wxfc1574e329d663a3"
+  "appid": "wxfc1574e329d663a3",
+  "cloudfunctionRoot": "cloudfunctions/",
+  "cloudbaseRoot": "cloudfunctions/",
+  "cloudfunctionTemplateRoot": "cloudfunctionTemplate/"
 }

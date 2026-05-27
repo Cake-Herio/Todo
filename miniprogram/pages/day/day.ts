@@ -1,5 +1,10 @@
 import { completePlan, deletePlan, getOwnerAvatarUrl, getPlanById, getPlansByDate, getToday, updatePlan, type OwnerKey, type Plan } from '../../utils/data'
+import { refreshWithLocalFirst } from '../../utils/cloud-sync'
+import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
+import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
+import { dismissModal, openModal } from '../../utils/modal-dismiss'
 import { addPlanTagOption, DEFAULT_PLAN_TAGS, getPlanTagOptions } from '../../utils/plan-tags'
+import { getScrollFadeState } from '../../utils/scroll-fade'
 
 interface DayPlanView {
   id: string
@@ -38,10 +43,10 @@ interface TimedInterval {
 
 const TIMED_LANE_GAP = 2
 const TIMED_SINGLE_WIDTH_PERCENT = 75
-const TIMED_CARD_PADDING = 8
+const TIMED_CARD_PADDING = 20
 const TIMED_TIME_ROW = 22
-const TIMED_TITLE_ROW = 30
-const TIMED_REMARK_BOX = 16
+const TIMED_TITLE_ROW = 34
+const TIMED_REMARK_GAP = 8
 const TIMED_REMARK_LINE_HEIGHT = 22
 const TIMED_COLUMN_BASE_WIDTH = 315
 
@@ -328,7 +333,7 @@ const estimateTimedCardContentHeight = (plan: TimedPlanView) => {
   let height = TIMED_CARD_PADDING + TIMED_TIME_ROW + TIMED_TITLE_ROW
 
   if (plan.remark) {
-    height += TIMED_REMARK_BOX + estimateRemarkLines(plan.remark, plan.widthPercent) * TIMED_REMARK_LINE_HEIGHT
+    height += TIMED_REMARK_GAP + estimateRemarkLines(plan.remark, plan.widthPercent) * TIMED_REMARK_LINE_HEIGHT
   }
 
   return Math.ceil(height) + 6
@@ -646,14 +651,12 @@ const buildBoardHeight = (timedPlans: TimedPlanView[], eveningZone: PeriodZone, 
 
 Component({
   data: {
+    safeTopPx: 0,
     dateTitle: formatDateTitle(getToday()),
     selectedDate: getToday(),
-    filters: [
-      { key: 'all', label: '全部', avatars: [{ key: 'me', url: getOwnerAvatarUrl('me') }, { key: 'partner', url: getOwnerAvatarUrl('partner') }] },
-      { key: 'me', label: '我', avatars: [{ key: 'me', url: getOwnerAvatarUrl('me') }] },
-      { key: 'partner', label: '对方', avatars: [{ key: 'partner', url: getOwnerAvatarUrl('partner') }] },
-    ],
-    activeFilter: 'all',
+    filters: getOwnerFilterStateLocal('all').filters,
+    activeFilter: getOwnerFilterStateLocal('all').activeFilter,
+    singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
     boardHeight: timeTop(TIMELINE_END),
     morningZone: { top: timeTop(6), height: timeTop(12) - timeTop(6) } as PeriodZone,
     afternoonZone: { top: timeTop(12), height: timeTop(18) - timeTop(12) } as PeriodZone,
@@ -665,6 +668,7 @@ Component({
     eveningPlans: [] as DayPlanView[],
     allDayPlans: [] as DayPlanView[],
     isPlanActionVisible: false,
+    isPlanActionClosing: false,
     isPlanEditVisible: false,
     activePlan: null as DayPlanView | null,
     editPlanForm: createDefaultEditPlanForm(getToday()),
@@ -672,6 +676,7 @@ Component({
     periodOptions: PERIOD_OPTIONS,
     periodOptionLabels: PERIOD_OPTIONS.map((item) => item.label),
     isPickerSheetVisible: false,
+    isPickerSheetClosing: false,
     pickerSheetKind: 'date' as PickerSheetKind,
     pickerSheetTitle: '',
     pickerTempValue: [0, 0, 0],
@@ -682,7 +687,10 @@ Component({
     pickerMinutes: PICKER_MINUTES,
     quickTags: getPlanTagOptions(),
     isTagCreateVisible: false,
+    showPlanTagScrollFadeLeft: false,
+    showPlanTagScrollFadeRight: false,
     nowCursor: { visible: false, top: 0, label: '' } as NowCursor,
+    pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
     attached() {
@@ -695,21 +703,50 @@ Component({
   },
   pageLifetimes: {
     show() {
-      this.refreshPlans()
-      this.startNowCursorTimer()
+      refreshPageFontStyle(this)
+      refreshWithLocalFirst(() => {
+        this.refreshPlans()
+        this.startNowCursorTimer()
+      })
     },
     hide() {
       this.clearNowCursorTimer()
     },
   },
   methods: {
+    initPageInsets() {
+      const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
+      const gapPx = Math.round((16 * windowWidth) / 750)
+      this.setData({ safeTopPx: statusBarHeight + gapPx })
+    },
+    goBack() {
+      wx.navigateBack({
+        fail: () => {
+          wx.switchTab({ url: '/pages/calendar/calendar' })
+        },
+      })
+    },
     onLoad(query: { date?: string }) {
+      this.initPageInsets()
       const selectedDate = query.date || getToday()
       this.setData({
         selectedDate,
         dateTitle: formatDateTitle(selectedDate),
       })
       this.refreshPlans()
+    },
+    async refreshOwnerFilters() {
+      const prevFilter = this.data.activeFilter
+      const state = await getOwnerFilterState(prevFilter)
+      this.setData({
+        filters: state.filters,
+        activeFilter: state.activeFilter,
+        singleUserMode: state.singleUserMode,
+      })
+
+      if (state.activeFilter !== prevFilter) {
+        this.refreshPlans()
+      }
     },
     refreshPlans() {
       const { selectedDate } = this.data
@@ -752,6 +789,8 @@ Component({
         boardHeight: buildBoardHeight(timedPlans, eveningZone, minutesToY),
         nowCursor: buildNowCursorWithScale(selectedDate, minutesToY),
       })
+
+      void this.refreshOwnerFilters()
     },
     startNowCursorTimer() {
       this.clearNowCursorTimer()
@@ -798,17 +837,23 @@ Component({
         return
       }
 
-      this.setData({
+      openModal(this, 'isPlanActionVisible', 'isPlanActionClosing', {
         activePlan: plan,
-        isPlanActionVisible: true,
       })
     },
     closePlanAction() {
-      this.setData({
-        isPlanActionVisible: false,
+      const extraData: Record<string, unknown> = {
         isPlanEditVisible: false,
-        isPickerSheetVisible: false,
         activePlan: null,
+      }
+
+      if (this.data.isPickerSheetVisible) {
+        extraData.isPickerSheetVisible = false
+        extraData.isPickerSheetClosing = false
+      }
+
+      dismissModal(this, 'isPlanActionVisible', 'isPlanActionClosing', {
+        extraData,
       })
     },
     openPlanEdit() {
@@ -833,6 +878,7 @@ Component({
         editPlanForm: buildEditPlanForm(raw, this.data.selectedDate),
         quickTags: getPlanTagOptions(),
       })
+      this.updatePlanTagScrollFades()
     },
     closePlanEdit() {
       this.setData({
@@ -852,6 +898,7 @@ Component({
 
       this.setData({
         isPickerSheetVisible: true,
+        isPickerSheetClosing: false,
         pickerSheetKind: 'date',
         pickerSheetTitle: '选择日期',
         pickerDayOptions: dayOptions,
@@ -867,6 +914,7 @@ Component({
 
       this.setData({
         isPickerSheetVisible: true,
+        isPickerSheetClosing: false,
         pickerSheetKind: 'time-start',
         pickerSheetTitle: '选择开始时间',
         pickerTempValue: [hour, minute],
@@ -877,6 +925,7 @@ Component({
 
       this.setData({
         isPickerSheetVisible: true,
+        isPickerSheetClosing: false,
         pickerSheetKind: 'time-end',
         pickerSheetTitle: '选择结束时间',
         pickerTempValue: [hour, minute],
@@ -885,15 +934,19 @@ Component({
     openPeriodPicker() {
       this.setData({
         isPickerSheetVisible: true,
+        isPickerSheetClosing: false,
         pickerSheetKind: 'period',
         pickerSheetTitle: '选择时段',
         pickerTempValue: [this.data.editPlanForm.periodIndex],
       })
     },
-    closePickerSheet() {
-      this.setData({
-        isPickerSheetVisible: false,
+    dismissPickerSheet(extraData?: Record<string, unknown>) {
+      dismissModal(this, 'isPickerSheetVisible', 'isPickerSheetClosing', {
+        extraData,
       })
+    },
+    closePickerSheet() {
+      this.dismissPickerSheet()
     },
     onPickerSheetChange(e: WechatMiniprogram.PickerViewChange) {
       const nextValue = e.detail.value as number[]
@@ -924,9 +977,8 @@ Component({
         const month = pickerTempValue[1] + 1
         const day = pickerTempValue[2] + 1
 
-        this.setData({
+        this.dismissPickerSheet({
           'editPlanForm.date': formatDateParts(year, month, day),
-          isPickerSheetVisible: false,
         })
         return
       }
@@ -935,9 +987,8 @@ Component({
         const timeValue = formatTimeParts(pickerTempValue[0], pickerTempValue[1])
         const field = pickerSheetKind === 'time-start' ? 'editPlanForm.startTime' : 'editPlanForm.endTime'
 
-        this.setData({
+        this.dismissPickerSheet({
           [field]: timeValue,
-          isPickerSheetVisible: false,
         })
         return
       }
@@ -946,10 +997,9 @@ Component({
         const periodIndex = pickerTempValue[0]
         const periodKey = PERIOD_OPTIONS[periodIndex]?.key || 'morning'
 
-        this.setData({
+        this.dismissPickerSheet({
           'editPlanForm.periodIndex': periodIndex,
           'editPlanForm.periodKey': periodKey,
-          isPickerSheetVisible: false,
         })
       }
     },
@@ -961,6 +1011,33 @@ Component({
     chooseEditPlanTag(e: WechatMiniprogram.BaseEvent) {
       this.setData({
         'editPlanForm.tag': e.currentTarget.dataset.tag,
+      })
+    },
+    updatePlanTagScrollFades(scrollLeft = 0) {
+      wx.nextTick(() => {
+        const query = wx.createSelectorQuery().in(this)
+        query.select('.tag-scroll').boundingClientRect()
+        query.select('.tag-scroll-list').boundingClientRect()
+        query.exec((res) => {
+          const viewportWidth = res[0]?.width || 0
+          const listWidth = res[1]?.width || 0
+          ;(this as WechatMiniprogram.IAnyObject).planTagScrollViewportWidth = viewportWidth
+          const fades = getScrollFadeState(scrollLeft, listWidth, viewportWidth)
+          this.setData({
+            showPlanTagScrollFadeLeft: fades.showLeft,
+            showPlanTagScrollFadeRight: fades.showRight,
+          })
+        })
+      })
+    },
+    onPlanTagScroll(e: WechatMiniprogram.ScrollViewScroll) {
+      const { scrollLeft, scrollWidth } = e.detail
+      const viewportWidth = (this as WechatMiniprogram.IAnyObject).planTagScrollViewportWidth || 0
+      const fades = getScrollFadeState(scrollLeft, scrollWidth, viewportWidth)
+
+      this.setData({
+        showPlanTagScrollFadeLeft: fades.showLeft,
+        showPlanTagScrollFadeRight: fades.showRight,
       })
     },
     openTagCreateSheet() {
@@ -994,6 +1071,7 @@ Component({
         title: '已添加主题',
         icon: 'success',
       })
+      this.updatePlanTagScrollFades()
     },
     onEditPlanInput(e: WechatMiniprogram.Input) {
       const field = e.currentTarget.dataset.field
@@ -1061,8 +1139,12 @@ Component({
       // Prevent modal content taps from closing the overlay.
     },
     startPlanFocus() {
+      const { activePlan } = this.data
       this.closePlanAction()
-      this.goFocus()
+
+      wx.navigateTo({
+        url: activePlan ? `/pages/focus/focus?planId=${activePlan.id}` : '/pages/focus/focus',
+      })
     },
     completeActivePlan() {
       const { activePlan } = this.data

@@ -5,6 +5,7 @@
     "pages/day/day",
     "pages/focus/focus",
     "pages/completed/completed",
+    "pages/completed-day/completed-day",
     "pages/stats/stats",
     "pages/tags/tags",
     "pages/settings/settings",
@@ -16,7 +17,7 @@
   },
   "tabBar": {
     "color": "#7A857D",
-    "selectedColor": "#8AA394",
+    "selectedColor": "#7FB592",
     "backgroundColor": "#FFFDF7",
     "borderStyle": "white",
     "list": [

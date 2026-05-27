@@ -1,21 +1,62 @@
-<navigation-bar title="设置" color="#2F3A34" background="#EDF4F0"></navigation-bar>
+<font-page-meta id="font-page-meta" />
+<view class="settings-page-shell" style="{{pageFontStyle}}">
+  <navigation-bar title="设置" color="#2F3A34" background="transparent"></navigation-bar>
 
-<view class="page settings-page">
-  <view class="profile card">
-    <view class="avatar">林</view>
-    <view>
-      <view class="profile-name">林间伙伴</view>
-      <view class="muted">邀请码：{{inviteCode}}</view>
+  <view class="page settings-page">
+    <view class="profile card">
+      <image wx:if="{{profileAvatarUrl}}" class="avatar avatar-image" src="{{profileAvatarUrl}}" mode="aspectFill"></image>
+      <view wx:else class="avatar">{{profileInitial}}</view>
+      <view>
+        <view class="profile-name">{{profileName}}</view>
+        <view class="muted">{{profileHint}}</view>
+        <view class="muted">邀请码：{{inviteCode}}</view>
+        <view class="muted">云状态：{{cloudStatusText}}</view>
+        <view wx:if="{{sharedSpaceId}}" class="muted">空间：{{sharedSpaceId}}</view>
+      </view>
+    </view>
+
+    <view class="settings-list card">
+      <view wx:for="{{items}}" wx:key="label" class="settings-item" data-label="{{item.label}}" bindtap="onItemTap">
+        <view>
+          <view class="item-label">{{item.label}}</view>
+          <view class="muted">{{item.desc}}</view>
+        </view>
+        <text class="arrow">›</text>
+      </view>
+    </view>
+
+    <view wx:if="{{isLoggedIn}}" class="settings-logout card">
+      <view class="settings-item settings-item-logout" bindtap="onLogoutTap">
+        <view>
+          <view class="item-label item-label-danger">退出登录</view>
+          <view class="muted">清除当前账号，回到首页登录</view>
+        </view>
+        <text class="arrow">›</text>
+      </view>
     </view>
   </view>
+</view>
 
-  <view class="settings-list card">
-    <view wx:for="{{items}}" wx:key="label" class="settings-item" data-label="{{item.label}}" bindtap="onItemTap">
-      <view>
-        <view class="item-label">{{item.label}}</view>
-        <view class="muted">{{item.desc}}</view>
+<view wx:if="{{isFontSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isFontSheetClosing ? 'is-closing' : ''}}" catchtap="closeFontPickerSheet" catchtouchmove="noop">
+  <view class="plan-picker-sheet panel-slide {{isFontSheetClosing ? 'is-closing' : ''}}" catchtap="noop">
+    <view class="plan-picker-sheet-header font-sheet-header">
+      <text class="plan-picker-sheet-title">选择字体</text>
+    </view>
+
+    <view class="font-sheet-options">
+      <view
+        wx:for="{{fontOptions}}"
+        wx:key="key"
+        class="font-sheet-option {{fontPreference === item.key ? 'active' : ''}}"
+        data-key="{{item.key}}"
+        catchtap="onFontOptionTap"
+      >
+        <view class="font-sheet-option-main">
+          <view class="font-sheet-option-label" style="font-family: {{item.previewFamily}};">{{item.label}}</view>
+          <view class="font-sheet-option-desc">{{item.desc}}</view>
+        </view>
+        <text wx:if="{{fontPreference === item.key}}" class="font-sheet-check">✓</text>
       </view>
-      <text class="arrow">›</text>
     </view>
   </view>
 </view>

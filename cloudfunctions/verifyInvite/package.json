@@ -1,0 +1,9 @@
+{
+  "name": "verifyInvite",
+  "version": "1.0.0",
+  "description": "Verify invite code and bind shared space",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

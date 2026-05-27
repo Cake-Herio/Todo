@@ -1,4 +1,10 @@
 Component({
+  properties: {
+    pageFontStyle: {
+      type: String,
+      value: '',
+    },
+  },
   data: {
     voiceText: '',
     placeholder: '边说边显示识别文本...',

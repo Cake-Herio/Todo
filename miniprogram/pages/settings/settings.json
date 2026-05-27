@@ -1,5 +1,9 @@
 {
+  "navigationBarBackgroundColor": "#EBF5EF",
+  "backgroundColor": "#EBF5EF",
+  "backgroundColorTop": "#EBF5EF",
   "usingComponents": {
+    "font-page-meta": "/components/font-page-meta/font-page-meta",
     "navigation-bar": "/components/navigation-bar/navigation-bar"
   }
 }

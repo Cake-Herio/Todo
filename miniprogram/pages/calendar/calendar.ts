@@ -8,6 +8,10 @@ import {
   type OwnerKey,
   type Plan,
 } from '../../utils/data'
+import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
+import { refreshWithLocalFirst } from '../../utils/cloud-sync'
+import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
+import { dismissModal, MODAL_EXIT_MS, openModal } from '../../utils/modal-dismiss'
 
 interface CalendarPlanView {
   id: string
@@ -22,6 +26,7 @@ interface CalendarDayView {
   day: number
   muted: boolean
   selected: boolean
+  hasItems: boolean
   plans: CalendarPlanView[]
   more: number
 }
@@ -30,7 +35,7 @@ type CalendarViewMode = 'plan' | 'completed'
 
 const COMPLETED_TYPE_FILTER = 'timed' as const
 
-const CALENDAR_HINT = '点日期查看详情'
+const CALENDAR_HINT = '点击日期快速选择'
 
 const minYear = 1970
 const maxYear = 2100
@@ -101,6 +106,7 @@ const buildCalendarDays = (
       day: date.getDate(),
       muted: date.getMonth() !== month,
       selected: dateText === selectedDate,
+      hasItems: dayPlans.length > 0,
       plans: visiblePlans,
       more: Math.max(dayPlans.length - visiblePlans.length, 0),
     }
@@ -138,6 +144,7 @@ const buildCompletedCalendarDays = (
       day: date.getDate(),
       muted: date.getMonth() !== month,
       selected: dateText === selectedDate,
+      hasItems: dayRecords.length > 0,
       plans: visiblePlans,
       more: Math.max(dayRecords.length - visiblePlans.length, 0),
     }
@@ -146,6 +153,7 @@ const buildCompletedCalendarDays = (
 
 Component({
   data: {
+    safeTopPx: 0,
     viewMode: 'plan' as CalendarViewMode,
     currentYear: new Date().getFullYear(),
     currentMonth: new Date().getMonth(),
@@ -159,33 +167,50 @@ Component({
     pickerValue: [new Date().getFullYear() - minYear, new Date().getMonth()],
     years,
     months,
-    filters: [
-      { key: 'all', label: '全部', avatars: [{ key: 'me', url: getOwnerAvatarUrl('me') }, { key: 'partner', url: getOwnerAvatarUrl('partner') }] },
-      { key: 'me', label: '我', avatars: [{ key: 'me', url: getOwnerAvatarUrl('me') }] },
-      { key: 'partner', label: '对方', avatars: [{ key: 'partner', url: getOwnerAvatarUrl('partner') }] },
-    ],
-    activeFilter: 'all',
+    filters: getOwnerFilterStateLocal('all').filters,
+    activeFilter: getOwnerFilterStateLocal('all').activeFilter,
+    singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
     weekdays: ['一', '二', '三', '四', '五', '六', '日'],
     days: [] as CalendarDayView[],
+    pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
     attached() {
+      const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
+      const gapPx = Math.round((16 * windowWidth) / 750)
+      this.setData({ safeTopPx: statusBarHeight + gapPx })
       this.refreshCalendar()
     },
   },
   pageLifetimes: {
     show() {
+      refreshPageFontStyle(this)
       const pendingMode = wx.getStorageSync('calendar_view_mode') as CalendarViewMode | ''
 
-      if (pendingMode === 'completed') {
-        wx.removeStorageSync('calendar_view_mode')
-        this.setData({ viewMode: 'completed' })
-      }
+      refreshWithLocalFirst(() => {
+        if (pendingMode === 'completed') {
+          wx.removeStorageSync('calendar_view_mode')
+          this.setData({ viewMode: 'completed' })
+        }
 
-      this.refreshCalendar()
+        this.refreshCalendar()
+      })
     },
   },
   methods: {
+    async refreshOwnerFilters() {
+      const prevFilter = this.data.activeFilter
+      const state = await getOwnerFilterState(prevFilter)
+      this.setData({
+        filters: state.filters,
+        activeFilter: state.activeFilter,
+        singleUserMode: state.singleUserMode,
+      })
+
+      if (state.activeFilter !== prevFilter) {
+        this.refreshCalendar()
+      }
+    },
     refreshCalendar() {
       const {
         currentYear,
@@ -203,6 +228,8 @@ Component({
         calendarHint: CALENDAR_HINT,
         days,
       })
+
+      void this.refreshOwnerFilters()
     },
     switchViewMode(e: WechatMiniprogram.BaseEvent) {
       const mode = e.currentTarget.dataset.mode as CalendarViewMode
@@ -232,27 +259,16 @@ Component({
       this.refreshCalendar()
     },
     openMonthPicker() {
-      this.setData({
-        isMonthPickerVisible: true,
-        isMonthPickerClosing: false,
+      openModal(this, 'isMonthPickerVisible', 'isMonthPickerClosing', {
         pickerYear: this.data.currentYear,
         pickerMonth: this.data.currentMonth,
         pickerValue: [this.data.currentYear - minYear, this.data.currentMonth],
       })
     },
     dismissMonthPicker() {
-      if (this.data.isMonthPickerClosing || !this.data.isMonthPickerVisible) {
-        return
-      }
-
-      this.setData({ isMonthPickerClosing: true })
-
-      setTimeout(() => {
-        this.setData({
-          isMonthPickerVisible: false,
-          isMonthPickerClosing: false,
-        })
-      }, 220)
+      dismissModal(this, 'isMonthPickerVisible', 'isMonthPickerClosing', {
+        durationMs: MODAL_EXIT_MS,
+      })
     },
     closeMonthPicker() {
       this.dismissMonthPicker()
@@ -277,11 +293,21 @@ Component({
       // Prevent picker panel taps from closing the overlay.
     },
     goDay(e: WechatMiniprogram.BaseEvent) {
-      const date = e.currentTarget.dataset.date
+      const date = e.currentTarget.dataset.date as string
+      const day = this.data.days.find((item) => item.date === date)
+
+      if (!day?.hasItems) {
+        wx.showToast({
+          title: this.data.viewMode === 'plan' ? '当天暂无计划' : '当天暂无完成记录',
+          icon: 'none',
+        })
+        return
+      }
 
       if (this.data.viewMode === 'completed') {
-        this.setData({ selectedDate: date })
-        this.refreshCalendar()
+        wx.navigateTo({
+          url: `/pages/completed-day/completed-day?date=${date}&filter=${this.data.activeFilter}`,
+        })
         return
       }
 

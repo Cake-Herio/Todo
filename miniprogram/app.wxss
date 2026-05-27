@@ -1,30 +1,6 @@
 /**app.wxss**/
-.container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  box-sizing: border-box;
-} 
-
-button {
-  background: initial;
-}
-
-button:focus{
-  outline: 0;
-}
-
-button::after{
-  border: none;
-}
-
-
 page {
-  background: #f6f6f6;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  font-family: "Songti SC", "STSong", "SimSun", serif;
+  font-family: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "楷体", serif;
 }
 
 view,
@@ -32,5 +8,164 @@ text,
 button,
 input,
 textarea {
-  font-family: "Songti SC", "STSong", "SimSun", serif;
+  font-family: inherit;
+}
+
+page {
+  min-height: 100vh;
+  background: #f7f3ea;
+  color: #2f3a34;
+}
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 0 28rpx 32rpx;
+  background: linear-gradient(180deg, #EBF5EF 0%, #f7f3ea 360rpx);
+}
+
+.page-top-header {
+  padding: 0 0 18rpx;
+}
+
+.page-top-title {
+  font-size: 42rpx;
+  font-weight: 800;
+}
+
+.scroll-page {
+  height: calc(100vh - 1px);
+}
+
+.card {
+  border-radius: 28rpx;
+  background: rgba(255, 253, 247, 0.94);
+  box-shadow: 0 16rpx 38rpx rgba(62, 94, 72, 0.08);
+  box-sizing: border-box;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 32rpx 0 18rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #2f3a34;
+}
+
+.muted {
+  color: #7a857d;
+  font-size: 24rpx;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  background: #E4F2E9;
+  color: #7FB592;
+  font-size: 22rpx;
+}
+
+.pill-blue {
+  background: #e9f1fb;
+  color: #5d8cc3;
+}
+
+.pill-red {
+  background: #fdeaea;
+  color: #d96565;
+}
+
+.primary-button,
+.secondary-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  font-weight: 700;
+  border: 0;
+  box-sizing: border-box;
+}
+
+.primary-button {
+  background: #98C6A8;
+  color: #fff;
+  box-shadow: 0 14rpx 28rpx rgba(152, 198, 168, 0.22);
+}
+
+.secondary-button {
+  background: #fffdf7;
+  color: #7FB592;
+  border: 2rpx solid #D9E8E0;
+}
+
+button::after {
+  border: 0;
+}
+
+.tag-scroll-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.tag-scroll {
+  flex: 1;
+  min-width: 0;
+  height: 56rpx;
+}
+
+.tag-scroll-list {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 56rpx;
+  gap: 12rpx;
+  padding-right: 12rpx;
+  box-sizing: border-box;
+}
+
+.tag-scroll-trail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 56rpx;
+  padding-left: 12rpx;
+  background: #fffdf7;
+  z-index: 2;
+}
+
+.tag-scroll-fade {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 2;
+}
+
+.tag-scroll-fade.is-visible {
+  opacity: 1;
+}
+
+.tag-scroll-fade-left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 72rpx;
+  height: 56rpx;
+  background: linear-gradient(270deg, rgba(255, 253, 247, 0) 0%, #fffdf7 100%);
+}
+
+.tag-scroll-fade-right {
+  position: absolute;
+  top: 0;
+  left: -72rpx;
+  width: 72rpx;
+  height: 56rpx;
+  background: linear-gradient(90deg, rgba(255, 253, 247, 0) 0%, #fffdf7 100%);
 }

@@ -6,15 +6,21 @@ export interface PlanTagOption {
 const CUSTOM_TAG_STORAGE_KEY = 'myforest_custom_plan_tags_v1'
 
 const DEFAULT_TAG_OPTIONS: PlanTagOption[] = [
-  { name: '英语', color: '#A9C7B5' },
-  { name: '写代码', color: '#A9C7B5' },
-  { name: '阅读', color: '#A9C7B5' },
+  { name: '英语', color: '#98C6A8' },
+  { name: '写代码', color: '#98C6A8' },
+  { name: '阅读', color: '#98C6A8' },
   { name: '运动', color: '#7DA7D9' },
+  { name: '冥想', color: '#9B8DD9' },
+  { name: '写作', color: '#F1B86A' },
+  { name: '学习', color: '#8BC4D9' },
+  { name: '整理', color: '#7BC8B8' },
+  { name: '复盘', color: '#D98BB0' },
+  { name: '绘画', color: '#E09A7A' },
   { name: '其它', color: '#7A857D' },
 ]
 
 export const TAG_PALETTE = [
-  '#A9C7B5',
+  '#98C6A8',
   '#7DA7D9',
   '#F1B86A',
   '#D98BB0',
@@ -22,7 +28,7 @@ export const TAG_PALETTE = [
   '#E09A7A',
   '#7BC8B8',
   '#8BC4D9',
-  '#8AA394',
+  '#7FB592',
   '#4A90E2',
   '#F5A623',
   '#E15B64',

@@ -1,4 +1,5 @@
 import { TAG_PALETTE, hslToHex } from '../../utils/plan-tags'
+import { MODAL_EXIT_MS } from '../../utils/modal-dismiss'
 
 Component({
   properties: {
@@ -6,8 +7,14 @@ Component({
       type: Boolean,
       value: false,
     },
+    pageFontStyle: {
+      type: String,
+      value: '',
+    },
   },
   data: {
+    shouldShow: false,
+    isClosing: false,
     tagName: '',
     tagColor: TAG_PALETTE[0],
     paletteColors: TAG_PALETTE,
@@ -16,7 +23,18 @@ Component({
   observers: {
     visible(visible: boolean) {
       if (visible) {
+        this.setData({
+          shouldShow: true,
+          isClosing: false,
+        })
         this.resetForm()
+        return
+      }
+
+      if (!this.data.isClosing && this.data.shouldShow) {
+        this.setData({
+          shouldShow: false,
+        })
       }
     },
   },
@@ -29,13 +47,32 @@ Component({
       })
     },
     noop() {},
+    dismissSheet(onDismissed?: () => void) {
+      if (this.data.isClosing || !this.data.shouldShow) {
+        return
+      }
+
+      this.setData({ isClosing: true })
+
+      setTimeout(() => {
+        this.setData({
+          shouldShow: false,
+          isClosing: false,
+        })
+        onDismissed?.()
+      }, MODAL_EXIT_MS)
+    },
     closeSheet() {
-      this.triggerEvent('close')
+      this.dismissSheet(() => {
+        this.triggerEvent('close')
+      })
     },
     confirmSheet() {
-      this.triggerEvent('confirm', {
-        name: this.data.tagName,
-        color: this.data.tagColor,
+      this.dismissSheet(() => {
+        this.triggerEvent('confirm', {
+          name: this.data.tagName,
+          color: this.data.tagColor,
+        })
       })
     },
     onTagNameInput(e: WechatMiniprogram.Input) {

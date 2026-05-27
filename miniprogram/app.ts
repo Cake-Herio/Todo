@@ -1,18 +1,30 @@
 // app.ts
-App<IAppOption>({
-  globalData: {},
-  onLaunch() {
-    // 展示本地存储能力
-    const logs = wx.getStorageSync('logs') || []
-    logs.unshift(Date.now())
-    wx.setStorageSync('logs', logs)
+import { ensureLocalData } from './utils/data'
+import { initCloud, syncFromCloud } from './utils/cloud-sync'
+import { applyFontOnLaunch } from './utils/font-preference'
+import { isSessionReady } from './utils/session'
 
-    // 登录
-    wx.login({
-      success: res => {
-        console.log(res.code)
-        // 发送 res.code 到后台换取 openId, sessionKey, unionId
-      },
-    })
+App<IAppOption>({
+  globalData: {
+    cloudReady: false,
+  },
+  onLaunch() {
+    void applyFontOnLaunch()
+    ensureLocalData()
+    initCloud()
+
+    void this.bootstrapCloudSession()
+  },
+  async bootstrapCloudSession() {
+    try {
+      if (!isSessionReady()) {
+        return
+      }
+
+      await syncFromCloud()
+      this.globalData.cloudReady = true
+    } catch (error) {
+      console.warn('[cloud] bootstrap failed', error)
+    }
   },
 })

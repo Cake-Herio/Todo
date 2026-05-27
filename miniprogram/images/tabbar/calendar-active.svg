@@ -1,9 +1,9 @@
 <svg width="81" height="81" viewBox="0 0 81 81" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect x="16" y="18" width="49" height="47" rx="8" stroke="#8AA394" stroke-width="5"/>
-<path d="M16 30H65" stroke="#8AA394" stroke-width="5"/>
-<path d="M28 14V24" stroke="#8AA394" stroke-width="5" stroke-linecap="round"/>
-<path d="M53 14V24" stroke="#8AA394" stroke-width="5" stroke-linecap="round"/>
-<rect x="26" y="38" width="8" height="8" rx="2" fill="#8AA394"/>
-<rect x="40" y="38" width="8" height="8" rx="2" fill="#8AA394"/>
-<rect x="54" y="38" width="8" height="8" rx="2" fill="#8AA394"/>
+<rect x="16" y="18" width="49" height="47" rx="8" stroke="#7FB592" stroke-width="5"/>
+<path d="M16 30H65" stroke="#7FB592" stroke-width="5"/>
+<path d="M28 14V24" stroke="#7FB592" stroke-width="5" stroke-linecap="round"/>
+<path d="M53 14V24" stroke="#7FB592" stroke-width="5" stroke-linecap="round"/>
+<rect x="26" y="38" width="8" height="8" rx="2" fill="#7FB592"/>
+<rect x="40" y="38" width="8" height="8" rx="2" fill="#7FB592"/>
+<rect x="54" y="38" width="8" height="8" rx="2" fill="#7FB592"/>
 </svg>

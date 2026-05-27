@@ -1,6 +1,13 @@
 import { addPlan, formatDate, getOwnerAvatarUrl, getPlansByDate, getToday, type OwnerKey, type Plan } from '../../utils/data'
+import { refreshWithLocalFirst, syncFromCloud } from '../../utils/cloud-sync'
+import { getDisplayAvatarUrl, getDisplayNickname, getSession, isProfileComplete, isSharedSpaceMode, saveUserProfile } from '../../utils/session'
+import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
+import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
+import { dismissModal, openModal } from '../../utils/modal-dismiss'
+import { fetchPartnerFocusPresence } from '../../utils/focus-presence'
 import { parsePlanTextWithDeepSeek, refinePlanDraftsWithDeepSeek, type AiPlanDraft, type AiDraftRefineSnapshot } from '../../utils/deepseek'
 import { addPlanTagOption, DEFAULT_PLAN_TAGS, getPlanTagNames, getPlanTagOptions, resolvePlanTag } from '../../utils/plan-tags'
+import { getScrollFadeState } from '../../utils/scroll-fade'
 import {
   applyEditPlanFormToDraft,
   buildDayOptions,
@@ -277,25 +284,43 @@ const saveAiPlanDrafts = (entries: AiDraftEntry[]) => {
 Component({
   data: {
     today: formatTodayTitle(),
-    nickname: '林间伙伴',
+    nickname: getDisplayNickname(),
+    avatarUrl: getDisplayAvatarUrl(),
+    needProfileLogin: !isProfileComplete(),
+    heroAvatarExpanded: isProfileComplete(),
+    heroAvatarAnimate: false,
+    homeContentVisible: isProfileComplete(),
+    homeRevealActive: false,
+    isLoginSheetVisible: false,
+    isLoginSheetClosing: false,
+    loginAvatarUrl: '',
+    loginNickname: '',
+    loginInviteCode: '',
+    isProfileSaving: false,
     heroTreeSrc: '/images/home/hero-tree.png',
+    singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
+    partnerFocusVisible: false,
     nextPlans: [] as UpcomingPreviewPlan[],
     partner: {
       name: '对方',
       status: '专注',
-      focus: '运动',
-      duration: '30 分钟',
+      focus: '',
+      duration: '',
       avatarUrl: getOwnerAvatarUrl('partner'),
     },
     isRecording: false,
+    isVoiceMaskVisible: false,
+    isVoiceMaskClosing: false,
     isVoiceCancelling: false,
     voiceMode: 'create' as 'create' | 'refine',
     isAiProcessing: false,
+    isAiProcessingClosing: false,
     aiProcessingText: '',
     aiProcessingTitle: '',
     skipNextVoiceResult: false,
     voiceStartY: 0,
     isAiDraftVisible: false,
+    isAiDraftClosing: false,
     isAiDraftEditVisible: false,
     editingDraftId: '',
     aiDraftSourceText: '',
@@ -320,6 +345,7 @@ Component({
     scheduleKindOptions: SCHEDULE_KIND_OPTIONS,
     periodOptionLabels: PERIOD_OPTIONS.map((item) => item.label),
     isPickerSheetVisible: false,
+    isPickerSheetClosing: false,
     pickerSheetKind: 'date' as PickerSheetKind,
     pickerSheetTitle: '',
     pickerTempValue: [0, 0, 0],
@@ -330,16 +356,31 @@ Component({
     pickerMinutes: PICKER_MINUTES,
     isTagCreateVisible: false,
     quickTags: getPlanTagOptions(),
+    showPlanTagScrollFadeLeft: false,
+    showPlanTagScrollFadeRight: false,
+    pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
     attached() {
       this.refreshHomeData()
+      this.syncHomeChrome()
       this.setupSpeechRecognition()
+    },
+    detached() {
+      this.stopPartnerFocusPolling()
     },
   },
   pageLifetimes: {
     show() {
-      this.refreshHomeData()
+      refreshPageFontStyle(this)
+      refreshWithLocalFirst(() => this.refreshHomeData())
+      this.syncHomeChrome()
+      if (!this.data.needProfileLogin) {
+        this.startPartnerFocusPolling()
+      }
+    },
+    hide() {
+      this.stopPartnerFocusPolling()
     },
   },
   methods: {
@@ -389,9 +430,7 @@ Component({
       speechManager.onError = () => {
         ;(this as WechatMiniprogram.IAnyObject)._liveVoiceText = ''
         this.getVoiceLiveText()?.reset()
-        this.setData({
-          isRecording: false,
-          isVoiceCancelling: false,
+        this.dismissVoiceMask({
           voiceMode: 'create',
         })
       }
@@ -400,11 +439,202 @@ Component({
       const today = getToday()
       const todayPlans = getPlansByDate(today)
       const activePlans = todayPlans.filter((plan) => plan.status !== 'completed')
+      const session = getSession()
+      const needProfileLogin = !isProfileComplete()
+      const patch: WechatMiniprogram.Component.DataOption = {
+        today: formatTodayTitle(),
+        nickname: getDisplayNickname(),
+        avatarUrl: getDisplayAvatarUrl(),
+        needProfileLogin,
+        singleUserMode: getOwnerFilterStateLocal(this.data.activeFilter || 'all').singleUserMode,
+        loginAvatarUrl: this.data.loginAvatarUrl || session?.avatarUrl || '',
+        loginNickname: this.data.loginNickname || (session?.nickname !== '我' ? session?.nickname || '' : ''),
+        nextPlans: pickUpcomingPlans(activePlans),
+      }
+
+      if (needProfileLogin && this.data.homeContentVisible) {
+        patch.homeContentVisible = false
+        patch.homeRevealActive = false
+      }
+
+      if (needProfileLogin && this.data.heroAvatarExpanded) {
+        patch.heroAvatarExpanded = false
+        patch.heroAvatarAnimate = false
+      }
+
+      if (!needProfileLogin && !this.data.heroAvatarExpanded) {
+        patch.heroAvatarExpanded = true
+      }
+
+      this.setData(patch)
+      this.syncHomeChrome()
+
+      if (!needProfileLogin) {
+        void this.refreshPartnerFocus()
+      }
+    },
+    syncHomeChrome() {
+      const show = !this.data.needProfileLogin && this.data.homeContentVisible
+
+      if (show) {
+        wx.showTabBar({ animation: this.data.homeRevealActive })
+      } else {
+        wx.hideTabBar({ animation: false })
+      }
+    },
+    revealHomeContent() {
+      this.setData({
+        homeContentVisible: true,
+        homeRevealActive: true,
+      }, () => {
+        this.syncHomeChrome()
+        setTimeout(() => {
+          if (this.data.homeRevealActive) {
+            this.setData({ homeRevealActive: false })
+          }
+        }, 920)
+      })
+    },
+    startPartnerFocusPolling() {
+      this.stopPartnerFocusPolling()
+      ;(this as WechatMiniprogram.IAnyObject)._partnerFocusPollTimer = setInterval(() => {
+        void this.refreshPartnerFocus()
+      }, 10000) as unknown as number
+    },
+    stopPartnerFocusPolling() {
+      const timer = (this as WechatMiniprogram.IAnyObject)._partnerFocusPollTimer as number | undefined
+      if (!timer) {
+        return
+      }
+
+      clearInterval(timer)
+      ;(this as WechatMiniprogram.IAnyObject)._partnerFocusPollTimer = 0
+    },
+    async refreshPartnerFocus() {
+      const state = await getOwnerFilterState('all')
+      const session = getSession()
+      const partnerAvatar = session?.partnerAvatarUrl || getOwnerAvatarUrl('partner')
 
       this.setData({
-        today: formatTodayTitle(),
-        nextPlans: pickUpcomingPlans(activePlans),
+        singleUserMode: state.singleUserMode,
       })
+
+      if (state.singleUserMode) {
+        if (this.data.partnerFocusVisible) {
+          this.setData({ partnerFocusVisible: false })
+        }
+        return
+      }
+
+      try {
+        const partner = await fetchPartnerFocusPresence()
+        this.setData({
+          partnerFocusVisible: Boolean(partner),
+          partner: partner || {
+            ...this.data.partner,
+            avatarUrl: partnerAvatar,
+          },
+        })
+      } catch (error) {
+        console.warn('[focus-presence] fetch partner failed', error)
+        if (this.data.partnerFocusVisible) {
+          this.setData({ partnerFocusVisible: false })
+        }
+      }
+    },
+    onHeroGreetingTap() {
+      if (!this.data.needProfileLogin) {
+        return
+      }
+
+      const session = getSession()
+      openModal(this, 'isLoginSheetVisible', 'isLoginSheetClosing', {
+        loginAvatarUrl: session?.avatarUrl || '',
+        loginNickname: session?.nickname && session.nickname !== '我' ? session.nickname : '',
+        loginInviteCode: this.data.loginInviteCode || '',
+      })
+    },
+    closeLoginSheet() {
+      if (this.data.isProfileSaving) {
+        return
+      }
+
+      dismissModal(this, 'isLoginSheetVisible', 'isLoginSheetClosing')
+    },
+    onChooseLoginAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>) {
+      const avatarUrl = e.detail?.avatarUrl
+      if (!avatarUrl) {
+        return
+      }
+
+      this.setData({ loginAvatarUrl: avatarUrl })
+    },
+    onLoginNicknameInput(e: WechatMiniprogram.Input) {
+      this.setData({ loginNickname: e.detail.value })
+    },
+    onLoginInviteCodeInput(e: WechatMiniprogram.Input) {
+      this.setData({ loginInviteCode: e.detail.value.toUpperCase() })
+    },
+    async onConfirmProfileLogin() {
+      const { loginAvatarUrl, loginNickname, loginInviteCode, isProfileSaving } = this.data
+      if (isProfileSaving) {
+        return
+      }
+
+      if (!loginAvatarUrl) {
+        wx.showToast({ title: '请先选择头像', icon: 'none' })
+        return
+      }
+
+      if (!loginNickname.trim()) {
+        wx.showToast({ title: '请输入昵称', icon: 'none' })
+        return
+      }
+
+      this.setData({ isProfileSaving: true })
+      wx.showLoading({ title: '登录中' })
+
+      try {
+        const session = await saveUserProfile({
+          nickname: loginNickname,
+          avatarUrl: loginAvatarUrl,
+          inviteCode: loginInviteCode,
+        })
+
+        if (isSharedSpaceMode()) {
+          await syncFromCloud()
+          getApp<IAppOption>().globalData.cloudReady = true
+        }
+        dismissModal(this, 'isLoginSheetVisible', 'isLoginSheetClosing', {
+          extraData: {
+            needProfileLogin: false,
+            nickname: getDisplayNickname(),
+            avatarUrl: getDisplayAvatarUrl(),
+            heroAvatarExpanded: true,
+            heroAvatarAnimate: true,
+            isProfileSaving: false,
+          },
+          onDismissed: () => {
+            this.refreshHomeData()
+            setTimeout(() => {
+              this.revealHomeContent()
+              this.startPartnerFocusPolling()
+            }, 520)
+          },
+        })
+        wx.showToast({
+          title: session.soloMode ? '已进入单人模式' : '欢迎回来',
+          icon: 'success',
+        })
+      } catch (error) {
+        wx.showToast({
+          title: error instanceof Error ? error.message : '登录失败',
+          icon: 'none',
+        })
+        this.setData({ isProfileSaving: false })
+      } finally {
+        wx.hideLoading()
+      }
     },
     onVoiceStart(e: WechatMiniprogram.TouchEvent) {
       this.startVoiceRecording(e, 'create')
@@ -429,10 +659,21 @@ Component({
 
       this.setData({
         voiceMode: mode,
+        isVoiceMaskVisible: true,
+        isVoiceMaskClosing: false,
         isRecording: true,
         isVoiceCancelling: false,
         skipNextVoiceResult: false,
         voiceStartY: touch ? touch.clientY : 0,
+      })
+    },
+    dismissVoiceMask(extraData?: Record<string, unknown>) {
+      dismissModal(this, 'isVoiceMaskVisible', 'isVoiceMaskClosing', {
+        extraData: {
+          isRecording: false,
+          isVoiceCancelling: false,
+          ...extraData,
+        },
       })
     },
     onVoiceEnd() {
@@ -441,9 +682,7 @@ Component({
       }
 
       if (this.data.isVoiceCancelling) {
-        this.setData({
-          isRecording: false,
-          isVoiceCancelling: false,
+        this.dismissVoiceMask({
           skipNextVoiceResult: true,
           voiceMode: 'create',
         })
@@ -455,17 +694,13 @@ Component({
         return
       }
 
-      this.setData({
-        isRecording: false,
-        isVoiceCancelling: false,
+      this.dismissVoiceMask({
         skipNextVoiceResult: false,
       })
       speechManager.stop()
     },
     onVoiceCancel() {
-      this.setData({
-        isRecording: false,
-        isVoiceCancelling: false,
+      this.dismissVoiceMask({
         skipNextVoiceResult: true,
         voiceMode: 'create',
       })
@@ -499,9 +734,19 @@ Component({
         })
       }
     },
+    dismissAiProcessing(extraData?: Record<string, unknown>) {
+      dismissModal(this, 'isAiProcessing', 'isAiProcessingClosing', {
+        extraData: {
+          aiProcessingText: '',
+          aiProcessingTitle: '',
+          ...extraData,
+        },
+      })
+    },
     createAiPlanDraft(sourceText: string) {
       this.setData({
         isAiProcessing: true,
+        isAiProcessingClosing: false,
         aiProcessingText: sourceText,
         aiProcessingTitle: 'AI 整理中',
       })
@@ -518,8 +763,7 @@ Component({
 
           const entries = buildAiDraftEntries(result.plans)
 
-          this.setData({
-            isAiDraftVisible: true,
+          openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
             isAiDraftEditVisible: false,
             editingDraftId: '',
             aiDraftSourceText: sourceText,
@@ -535,11 +779,7 @@ Component({
           })
         })
         .finally(() => {
-          this.setData({
-            isAiProcessing: false,
-            aiProcessingText: '',
-            aiProcessingTitle: '',
-          })
+          this.dismissAiProcessing()
         })
     },
     refineAiPlanDrafts(supplementText: string) {
@@ -552,6 +792,7 @@ Component({
 
       this.setData({
         isAiProcessing: true,
+        isAiProcessingClosing: false,
         aiProcessingText: supplementText,
         aiProcessingTitle: 'AI 调整中',
       })
@@ -575,8 +816,7 @@ Component({
 
           const entries = mergeRefinedEntries(aiDraftEntries, result.plans)
 
-          this.setData({
-            isAiDraftVisible: true,
+          openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
             isAiDraftEditVisible: false,
             editingDraftId: '',
             aiDraftEntries: entries,
@@ -593,22 +833,25 @@ Component({
           })
         })
         .finally(() => {
-          this.setData({
-            isAiProcessing: false,
-            aiProcessingText: '',
-            aiProcessingTitle: '',
-          })
+          this.dismissAiProcessing()
         })
     },
     closeAiDraft() {
-      this.setData({
-        isAiDraftVisible: false,
+      const extraData: Record<string, unknown> = {
         isAiDraftEditVisible: false,
-        isPickerSheetVisible: false,
         editingDraftId: '',
         aiDraftSourceText: '',
         aiDraftEntries: [],
         aiDraftCards: [],
+      }
+
+      if (this.data.isPickerSheetVisible) {
+        extraData.isPickerSheetVisible = false
+        extraData.isPickerSheetClosing = false
+      }
+
+      dismissModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
+        extraData,
       })
     },
     confirmAiDrafts() {
@@ -653,13 +896,20 @@ Component({
         quickTags: getPlanTagOptions(),
         editPlanForm: buildEditPlanFormFromDraft(entry.plan, getToday(), entry.ownerKey),
       })
+      this.updatePlanTagScrollFades()
     },
     closeAiDraftEdit() {
-      this.setData({
+      const extraData: Record<string, unknown> = {
         isAiDraftEditVisible: false,
-        isPickerSheetVisible: false,
         editingDraftId: '',
-      })
+      }
+
+      if (this.data.isPickerSheetVisible) {
+        extraData.isPickerSheetVisible = false
+        extraData.isPickerSheetClosing = false
+      }
+
+      this.setData(extraData)
     },
     chooseScheduleKind(e: WechatMiniprogram.BaseEvent) {
       this.setData({
@@ -674,6 +924,7 @@ Component({
 
       this.setData({
         isPickerSheetVisible: true,
+        isPickerSheetClosing: false,
         pickerSheetKind: 'date',
         pickerSheetTitle: '选择日期',
         pickerDayOptions: dayOptions,
@@ -689,6 +940,7 @@ Component({
 
       this.setData({
         isPickerSheetVisible: true,
+        isPickerSheetClosing: false,
         pickerSheetKind: 'time-start',
         pickerSheetTitle: '选择开始时间',
         pickerTempValue: [hour, minute],
@@ -699,6 +951,7 @@ Component({
 
       this.setData({
         isPickerSheetVisible: true,
+        isPickerSheetClosing: false,
         pickerSheetKind: 'time-end',
         pickerSheetTitle: '选择结束时间',
         pickerTempValue: [hour, minute],
@@ -707,15 +960,19 @@ Component({
     openPeriodPicker() {
       this.setData({
         isPickerSheetVisible: true,
+        isPickerSheetClosing: false,
         pickerSheetKind: 'period',
         pickerSheetTitle: '选择时段',
         pickerTempValue: [this.data.editPlanForm.periodIndex],
       })
     },
-    closePickerSheet() {
-      this.setData({
-        isPickerSheetVisible: false,
+    dismissPickerSheet(extraData?: Record<string, unknown>) {
+      dismissModal(this, 'isPickerSheetVisible', 'isPickerSheetClosing', {
+        extraData,
       })
+    },
+    closePickerSheet() {
+      this.dismissPickerSheet()
     },
     onPickerSheetChange(e: WechatMiniprogram.PickerViewChange) {
       const nextValue = e.detail.value as number[]
@@ -746,9 +1003,8 @@ Component({
         const month = pickerTempValue[1] + 1
         const day = pickerTempValue[2] + 1
 
-        this.setData({
+        this.dismissPickerSheet({
           'editPlanForm.date': formatDateParts(year, month, day),
-          isPickerSheetVisible: false,
         })
         return
       }
@@ -757,9 +1013,8 @@ Component({
         const timeValue = formatTimeParts(pickerTempValue[0], pickerTempValue[1])
         const field = pickerSheetKind === 'time-start' ? 'editPlanForm.startTime' : 'editPlanForm.endTime'
 
-        this.setData({
+        this.dismissPickerSheet({
           [field]: timeValue,
-          isPickerSheetVisible: false,
         })
         return
       }
@@ -768,10 +1023,9 @@ Component({
         const periodIndex = pickerTempValue[0]
         const periodKey = PERIOD_OPTIONS[periodIndex]?.key || 'morning'
 
-        this.setData({
+        this.dismissPickerSheet({
           'editPlanForm.periodIndex': periodIndex,
           'editPlanForm.periodKey': periodKey,
-          isPickerSheetVisible: false,
         })
       }
     },
@@ -783,6 +1037,33 @@ Component({
     chooseEditPlanTag(e: WechatMiniprogram.BaseEvent) {
       this.setData({
         'editPlanForm.tag': e.currentTarget.dataset.tag,
+      })
+    },
+    updatePlanTagScrollFades(scrollLeft = 0) {
+      wx.nextTick(() => {
+        const query = wx.createSelectorQuery().in(this)
+        query.select('.tag-scroll').boundingClientRect()
+        query.select('.tag-scroll-list').boundingClientRect()
+        query.exec((res) => {
+          const viewportWidth = res[0]?.width || 0
+          const listWidth = res[1]?.width || 0
+          ;(this as WechatMiniprogram.IAnyObject).planTagScrollViewportWidth = viewportWidth
+          const fades = getScrollFadeState(scrollLeft, listWidth, viewportWidth)
+          this.setData({
+            showPlanTagScrollFadeLeft: fades.showLeft,
+            showPlanTagScrollFadeRight: fades.showRight,
+          })
+        })
+      })
+    },
+    onPlanTagScroll(e: WechatMiniprogram.ScrollViewScroll) {
+      const { scrollLeft, scrollWidth } = e.detail
+      const viewportWidth = (this as WechatMiniprogram.IAnyObject).planTagScrollViewportWidth || 0
+      const fades = getScrollFadeState(scrollLeft, scrollWidth, viewportWidth)
+
+      this.setData({
+        showPlanTagScrollFadeLeft: fades.showLeft,
+        showPlanTagScrollFadeRight: fades.showRight,
       })
     },
     openTagCreateSheet() {
@@ -816,6 +1097,7 @@ Component({
         title: '已添加主题',
         icon: 'success',
       })
+      this.updatePlanTagScrollFades()
     },
     onEditPlanInput(e: WechatMiniprogram.Input) {
       const field = e.currentTarget.dataset.field
@@ -846,9 +1128,12 @@ Component({
         aiDraftEntries: entries,
         aiDraftCards: mapAiDraftCards(entries),
         isAiDraftEditVisible: false,
-        isPickerSheetVisible: false,
         editingDraftId: '',
       })
+
+      if (this.data.isPickerSheetVisible) {
+        this.dismissPickerSheet()
+      }
 
       wx.showToast({
         title: '已更新草稿',

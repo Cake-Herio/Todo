@@ -1,3 +1,6 @@
+import { notifyCloudMutate } from './cloud-bridge'
+import { getSession } from './session'
+
 export type OwnerKey = 'me' | 'partner'
 export type PlanStatus = 'pending' | 'in_progress' | 'completed' | 'overdue' | 'cancelled'
 export type CompletionMode = 'manual' | 'timed'
@@ -29,6 +32,7 @@ export interface CompletedRecord {
   title: string
   tag: string
   detail: string
+  startedAt: number | null
   completedAt: number
   completionMode: CompletionMode
   actualMinutes: number | null
@@ -40,14 +44,12 @@ interface AppData {
   completedRecords: CompletedRecord[]
 }
 
-const STORAGE_KEY = 'myforest_local_data_v3'
+const STORAGE_KEY = 'myforest_local_data_v5'
 const AVATARS = {
   me: '/assets/avatars/me.png',
   partner: '/assets/avatars/partner.png',
 }
 export { DEFAULT_PLAN_TAGS } from './plan-tags'
-
-const now = Date.now()
 
 const formatDateValue = (date: Date) => {
   const year = date.getFullYear()
@@ -56,391 +58,33 @@ const formatDateValue = (date: Date) => {
   return `${year}-${month}-${day}`
 }
 
-const SEED_DATE = formatDateValue(new Date())
-
-const seedData: AppData = {
-  plans: [
-    {
-      id: 'plan-english-morning',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '背英语单词',
-      tag: '英语',
-      remark: '背完 Unit 3 单词',
-      date: SEED_DATE,
-      startTime: '09:00',
-      endTime: '10:00',
-      timeText: null,
-      estimatedMinutes: 60,
-      completionMode: 'manual',
-      status: 'overdue',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-code-evening',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '项目复盘',
-      tag: '写代码',
-      remark: '整理项目进度和下一步计划',
-      date: SEED_DATE,
-      startTime: '19:30',
-      endTime: '20:30',
-      timeText: null,
-      estimatedMinutes: 60,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-partner-overlap-morning',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '晨会',
-      tag: '写代码',
-      remark: '和我撞时段的并行计划',
-      date: SEED_DATE,
-      startTime: '09:30',
-      endTime: '10:30',
-      timeText: null,
-      estimatedMinutes: 60,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-read-morning',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '阅读',
-      tag: '阅读',
-      remark: '阅读一章书',
-      date: SEED_DATE,
-      startTime: null,
-      endTime: null,
-      timeText: '上午',
-      estimatedMinutes: 30,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-read-today',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '整理项目 README',
-      tag: '写代码',
-      remark: null,
-      date: SEED_DATE,
-      startTime: null,
-      endTime: null,
-      timeText: '今天',
-      estimatedMinutes: 30,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-sport-night',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '运动半小时',
-      tag: '运动',
-      remark: null,
-      date: SEED_DATE,
-      startTime: null,
-      endTime: null,
-      timeText: '晚上',
-      estimatedMinutes: 30,
-      completionMode: 'manual',
-      status: 'in_progress',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-lunch-me-read',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '午间阅读',
-      tag: '阅读',
-      remark: '三段重叠测试 A',
-      date: SEED_DATE,
-      startTime: '12:00',
-      endTime: '13:00',
-      timeText: null,
-      estimatedMinutes: 60,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-lunch-partner-sport',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '午间运动',
-      tag: '运动',
-      remark: '三段重叠测试 B',
-      date: SEED_DATE,
-      startTime: '12:15',
-      endTime: '13:15',
-      timeText: null,
-      estimatedMinutes: 60,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-lunch-me-english',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '英语听力',
-      tag: '英语',
-      remark: '与午间阅读错开，单用户不重叠',
-      date: SEED_DATE,
-      startTime: '13:30',
-      endTime: '14:00',
-      timeText: null,
-      estimatedMinutes: 60,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-afternoon-code-me',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '写代码',
-      tag: '写代码',
-      remark: '下午专注开发新功能模块',
-      date: SEED_DATE,
-      startTime: '14:00',
-      endTime: '15:30',
-      timeText: null,
-      estimatedMinutes: 90,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-afternoon-review-partner',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '代码 Review',
-      tag: '写代码',
-      remark: '与我的开发时段部分重叠',
-      date: SEED_DATE,
-      startTime: '14:30',
-      endTime: '15:00',
-      timeText: null,
-      estimatedMinutes: 30,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-short-walk-me',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '散步',
-      tag: '运动',
-      remark: null,
-      date: SEED_DATE,
-      startTime: '16:00',
-      endTime: '16:30',
-      timeText: null,
-      estimatedMinutes: 30,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-evening-gym-partner',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '健身房',
-      tag: '运动',
-      remark: '与项目复盘时段部分重叠',
-      date: SEED_DATE,
-      startTime: '20:00',
-      endTime: '21:00',
-      timeText: null,
-      estimatedMinutes: 60,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-afternoon-period-partner',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '整理笔记',
-      tag: '阅读',
-      remark: '下午时段的模糊计划',
-      date: SEED_DATE,
-      startTime: null,
-      endTime: null,
-      timeText: '下午',
-      estimatedMinutes: 45,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-evening-period-me',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '写日记',
-      tag: '其它',
-      remark: '晚上时段的模糊计划',
-      date: SEED_DATE,
-      startTime: null,
-      endTime: null,
-      timeText: '晚上',
-      estimatedMinutes: 20,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-allday-partner',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '取快递',
-      tag: '其它',
-      remark: '全天都可以做',
-      date: SEED_DATE,
-      startTime: null,
-      endTime: null,
-      timeText: '今天',
-      estimatedMinutes: 15,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-english-23',
-      ownerKey: 'me',
-      ownerName: '我',
-      ownerAvatar: '我',
-      color: 'green',
-      title: '英语阅读',
-      tag: '英语',
-      remark: null,
-      date: '2026-05-23',
-      startTime: null,
-      endTime: null,
-      timeText: '今天',
-      estimatedMinutes: 40,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'plan-code-30',
-      ownerKey: 'partner',
-      ownerName: 'W',
-      ownerAvatar: 'W',
-      color: 'blue',
-      title: '代码整理',
-      tag: '写代码',
-      remark: null,
-      date: '2026-05-30',
-      startTime: '10:00',
-      endTime: '11:00',
-      timeText: null,
-      estimatedMinutes: 60,
-      completionMode: 'manual',
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    },
-  ],
-  completedRecords: [
-    {
-      id: 'record-english',
-      planId: 'plan-old-english',
-      ownerKey: 'me',
-      title: '背英语单词',
-      tag: '英语',
-      detail: '背完 Unit 3 单词',
-      completedAt: now,
-      completionMode: 'timed',
-      actualMinutes: 40,
-      wasOverdue: true,
-    },
-    {
-      id: 'record-read',
-      planId: 'plan-old-read',
-      ownerKey: 'partner',
-      title: '阅读',
-      tag: '阅读',
-      detail: '读完一章',
-      completedAt: now,
-      completionMode: 'manual',
-      actualMinutes: null,
-      wasOverdue: false,
-    },
-  ],
-}
-
+const createEmptyAppData = (): AppData => ({
+  plans: [],
+  completedRecords: [],
+})
 export const getToday = () => formatDateValue(new Date())
 
-export const getOwnerAvatarUrl = (ownerKey: OwnerKey) => AVATARS[ownerKey]
+export const getOwnerAvatarUrl = (ownerKey: OwnerKey) => {
+  if (ownerKey === 'me') {
+    const session = getSession()
+    if (session?.profileCompleted && session.avatarUrl) {
+      return session.avatarUrl
+    }
+  }
+
+  return AVATARS[ownerKey]
+}
 
 export const ensureLocalData = () => {
   const data = wx.getStorageSync(STORAGE_KEY) as AppData | ''
 
   if (!data) {
-    wx.setStorageSync(STORAGE_KEY, seedData)
+    wx.setStorageSync(STORAGE_KEY, createEmptyAppData())
   }
+}
+
+const notifyCloudDataChanged = () => {
+  notifyCloudMutate()
 }
 
 export const getLocalData = (): AppData => {
@@ -457,6 +101,15 @@ export const getPlans = () => getLocalData().plans
 export const getCompletedRecords = () => getLocalData().completedRecords
 
 export const getPlansByDate = (date: string) => getPlans().filter((plan) => plan.date === date && plan.status !== 'cancelled')
+
+export const getBindablePlansForToday = (ownerKey: OwnerKey = 'me') =>
+  getPlans().filter(
+    (plan) =>
+      plan.date === getToday() &&
+      plan.ownerKey === ownerKey &&
+      plan.status !== 'completed' &&
+      plan.status !== 'cancelled',
+  )
 
 export const getPlanById = (planId: string) => getPlans().find((plan) => plan.id === planId) || null
 
@@ -575,6 +228,8 @@ export const addPlan = (input: {
     plans: [plan, ...data.plans],
   })
 
+  notifyCloudDataChanged()
+
   return { ok: true, plan }
 }
 
@@ -650,6 +305,8 @@ export const updatePlan = (
     plans: data.plans.map((item) => (item.id === planId ? plan : item)),
   })
 
+  notifyCloudDataChanged()
+
   return { ok: true, plan }
 }
 
@@ -659,6 +316,8 @@ export const deletePlan = (planId: string) => {
     ...data,
     plans: data.plans.filter((plan) => plan.id !== planId),
   })
+
+  notifyCloudDataChanged()
 }
 
 export const completePlan = (planId: string) => {
@@ -677,6 +336,7 @@ export const completePlan = (planId: string) => {
     title: target.title,
     tag: target.tag,
     detail: target.remark || target.title,
+    startedAt: null,
     completedAt,
     completionMode: target.completionMode,
     actualMinutes: null,
@@ -687,6 +347,57 @@ export const completePlan = (planId: string) => {
     plans: data.plans.map((plan) => plan.id === planId ? { ...plan, status: 'completed', updatedAt: completedAt } : plan),
     completedRecords: [record, ...data.completedRecords],
   })
+
+  notifyCloudDataChanged()
+}
+
+export const saveTimedCompletion = (input: {
+  tag: string
+  detail?: string
+  actualMinutes: number
+  startedAt: number
+  completedAt?: number
+  planId?: string
+  ownerKey?: OwnerKey
+}) => {
+  const data = getLocalData()
+  const completedAt = input.completedAt ?? Date.now()
+  const linkedPlan = input.planId ? data.plans.find((plan) => plan.id === input.planId) : null
+  const ownerKey = linkedPlan?.ownerKey || input.ownerKey || 'me'
+  const planId = linkedPlan?.id || `focus-${completedAt}`
+  const tag = input.tag || linkedPlan?.tag || '专注'
+  const title = linkedPlan?.title || tag
+  const detail = input.detail?.trim() || linkedPlan?.remark || title
+
+  const record: CompletedRecord = {
+    id: `record-${completedAt}`,
+    planId,
+    ownerKey,
+    title,
+    tag,
+    detail,
+    startedAt: input.startedAt,
+    completedAt,
+    completionMode: 'timed',
+    actualMinutes: input.actualMinutes,
+    wasOverdue: linkedPlan?.status === 'overdue',
+  }
+
+  saveLocalData({
+    ...data,
+    plans: linkedPlan
+      ? data.plans.map((plan) =>
+          plan.id === linkedPlan.id
+            ? { ...plan, status: 'completed', updatedAt: completedAt }
+            : plan,
+        )
+      : data.plans,
+    completedRecords: [record, ...data.completedRecords],
+  })
+
+  notifyCloudDataChanged()
+
+  return record
 }
 
 export const formatDate = formatDateValue

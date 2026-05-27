@@ -1,4 +1,9 @@
+.day-scroll {
+  height: 100vh;
+}
+
 .day-page {
+  position: relative;
   padding-bottom: 56rpx;
 }
 
@@ -6,16 +11,8 @@
   font-size: 26rpx;
 }
 
-.day-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24rpx 0 10rpx;
-}
-
-.date-title {
-  font-size: 44rpx;
-  font-weight: 800;
+.day-date-back:active {
+  opacity: 0.72;
 }
 
 .small-button {
@@ -43,7 +40,7 @@
 }
 
 .filter-chip.active {
-  background: #A9C7B5;
+  background: #98C6A8;
   color: #fff;
   font-weight: 700;
 }
@@ -99,7 +96,7 @@
 .board-header-col {
   flex: 1;
   min-width: 0;
-  color: #8AA394;
+  color: #7FB592;
   font-size: 22rpx;
   font-weight: 800;
   text-align: center;
@@ -112,7 +109,7 @@
 }
 
 .board-header-col.col-timed {
-  border-right: 2rpx dashed rgba(169, 199, 181, 0.22);
+  border-right: 2rpx dashed rgba(152, 198, 168, 0.22);
   box-sizing: border-box;
 }
 
@@ -164,7 +161,7 @@
   width: 10rpx;
   height: 10rpx;
   margin-right: 8rpx;
-  border: 2rpx solid #A9C7B5;
+  border: 2rpx solid #98C6A8;
   border-radius: 50%;
   background: #fffdf7;
   box-sizing: border-box;
@@ -203,7 +200,7 @@
   right: 8rpx;
   width: 14rpx;
   height: 14rpx;
-  border: 3rpx solid #A9C7B5;
+  border: 3rpx solid #98C6A8;
   border-radius: 50%;
   background: #fffdf7;
   box-sizing: border-box;
@@ -214,7 +211,7 @@
   position: absolute;
   top: 50%;
   right: 24rpx;
-  color: #8AA394;
+  color: #7FB592;
   font-size: 18rpx;
   font-weight: 800;
   white-space: nowrap;
@@ -225,7 +222,7 @@
   flex: 1;
   height: 2rpx;
   margin-right: 4rpx;
-  background: linear-gradient(90deg, #A9C7B5 0%, rgba(169, 199, 181, 0.22) 100%);
+  background: linear-gradient(90deg, #98C6A8 0%, rgba(152, 198, 168, 0.22) 100%);
 }
 
 .board-column {
@@ -237,7 +234,7 @@
 }
 
 .timed-body {
-  border-right: 2rpx dashed rgba(169, 199, 181, 0.22);
+  border-right: 2rpx dashed rgba(152, 198, 168, 0.22);
 }
 
 .period-body {
@@ -250,13 +247,13 @@
   right: 0;
   box-sizing: border-box;
   padding: 6rpx 4rpx;
-  border-top: 2rpx dashed rgba(169, 199, 181, 0.18);
+  border-top: 2rpx dashed rgba(152, 198, 168, 0.18);
   overflow: visible;
 }
 
 .period-zone-label {
   margin-bottom: 6rpx;
-  color: #8AA394;
+  color: #7FB592;
   font-size: 18rpx;
   font-weight: 600;
   opacity: 0.85;
@@ -283,26 +280,101 @@
   transform: scale(0.98);
 }
 
-.board-card.green {
-  border-left: 4rpx solid #A9C7B5;
-}
-
-.board-card.blue {
-  border-left: 4rpx solid #7da7d9;
-}
-
-.board-card.expired {
-  border-left: 4rpx solid #b8c0ba;
-}
-
 .timed-card {
   position: absolute;
   display: flex;
   flex-direction: column;
-  padding: 4rpx 3rpx 0;
+  padding: 0;
   min-height: 0;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+.schedule-card {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 10rpx 10rpx 8rpx;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.schedule-card-inner {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+
+.schedule-card-time {
+  margin-bottom: 6rpx;
+  padding: 0 2rpx;
+  color: #7FB592;
+  font-size: 15rpx;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.schedule-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  padding: 0 2rpx;
+}
+
+.schedule-card-avatar {
+  flex: 0 0 22rpx;
+  width: 22rpx;
+  height: 22rpx;
+  border-radius: 50%;
+}
+
+.schedule-card-tag {
+  flex: 0 1 auto;
+  max-width: calc(100% - 88rpx);
+  min-height: 28rpx;
+  padding: 0 10rpx;
+  font-size: 17rpx;
+  line-height: 28rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-card-status {
+  flex: 0 0 auto;
+  color: #9ba69e;
+  font-size: 14rpx;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.schedule-card-status.overdue {
+  color: #d96565;
+  font-weight: 700;
+}
+
+.schedule-card-remark {
+  margin-top: 8rpx;
+  padding: 0 2rpx;
+  color: #9ba69e;
+  font-size: 15rpx;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.schedule-card-leaf {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 96rpx;
+  height: 78rpx;
+  opacity: 0.72;
+  pointer-events: none;
 }
 
 .period-card,
@@ -315,98 +387,32 @@
   overflow: hidden;
 }
 
-.period-card .card-layout.has-remark,
-.allday-card .card-layout.has-remark {
-  min-height: 104rpx;
+.period-card .schedule-card,
+.allday-card .schedule-card {
+  min-height: 88rpx;
+  padding: 12rpx 12rpx 10rpx;
 }
 
-.period-card .card-layout.no-remark,
-.allday-card .card-layout.no-remark {
-  padding-bottom: 8rpx;
-  box-sizing: border-box;
+.period-card .schedule-card-tag,
+.allday-card .schedule-card-tag {
+  max-width: calc(100% - 72rpx);
+  font-size: 18rpx;
 }
 
-.timed-card .card-layout {
-  height: 100%;
-  overflow: hidden;
-}
-
-.timed-card .card-layout.no-remark {
-  padding-bottom: 4rpx;
-  box-sizing: border-box;
-}
-
-.card-layout.is-timed .card-time {
-  flex: 0 0 auto;
-  margin-bottom: 2rpx;
+.period-card .schedule-card-status,
+.allday-card .schedule-card-status {
   font-size: 16rpx;
-  line-height: 1.1;
 }
 
-.card-layout.is-timed .card-title-section {
-  flex: 0 0 auto;
-  min-width: 0;
+.period-card .schedule-card-remark,
+.allday-card .schedule-card-remark {
+  font-size: 17rpx;
 }
 
-.card-layout.is-timed.no-remark .card-title-section {
-  flex: 1;
-  display: flex;
-  align-items: center;
-}
-
-.card-layout.is-timed .card-head {
-  width: 100%;
-}
-
-.card-layout.is-timed .card-head .pill {
-  flex: 0 1 auto;
-  width: auto;
-  max-width: calc(100% - 30rpx);
-  min-height: 30rpx;
-  padding: 0 8rpx;
-  font-size: 18rpx;
-  line-height: 30rpx;
-}
-
-.card-tag-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.card-layout.is-timed .card-body {
-  flex: 1;
-  min-height: 0;
-  margin: 4rpx -3rpx 0;
-  padding: 6rpx 7rpx 8rpx;
-  border-radius: 8rpx 8rpx 0 0;
-  background: rgba(169, 199, 181, 0.08);
-  overflow: hidden;
-}
-
-.card-layout.is-timed .card-body-inner {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 0;
-  overflow: visible;
-}
-
-.card-layout.is-timed .card-remark {
-  font-size: 18rpx;
-  line-height: 1.3;
-  white-space: normal;
-  word-break: break-all;
-  overflow: visible;
-  display: block;
-  -webkit-line-clamp: unset;
-}
-
-.card-layout.is-timed .card-avatar {
-  flex: 0 0 24rpx;
-  width: 24rpx;
-  height: 24rpx;
+.period-card .schedule-card-leaf,
+.allday-card .schedule-card-leaf {
+  width: 108rpx;
+  height: 88rpx;
 }
 
 .card-layout {
@@ -439,7 +445,7 @@
   margin-top: 6rpx;
   padding: 8rpx 6rpx;
   border-radius: 12rpx;
-  background: rgba(169, 199, 181, 0.07);
+  background: rgba(152, 198, 168, 0.07);
   overflow: hidden;
 }
 
@@ -481,7 +487,7 @@
 
 .card-time {
   margin-bottom: 4rpx;
-  color: #8AA394;
+  color: #7FB592;
   font-size: 18rpx;
   font-weight: 800;
   line-height: 1.2;
@@ -531,7 +537,7 @@
 }
 
 .allday-body {
-  border-left: 2rpx dashed rgba(169, 199, 181, 0.22);
+  border-left: 2rpx dashed rgba(152, 198, 168, 0.22);
 }
 
 .allday-cards {
@@ -601,61 +607,136 @@
   font-size: 28rpx;
 }
 
-.plan-action-preview {
+.plan-action-preview.board-card {
+  position: relative;
+  display: block;
   margin-top: 22rpx;
   margin-bottom: 8rpx;
-  padding: 22rpx;
+  padding: 0;
+  border-radius: 24rpx;
+  overflow: hidden;
 }
 
-.plan-preview-time {
-  margin-bottom: 12rpx;
-  color: #8AA394;
+.plan-action-preview .schedule-card {
+  height: auto;
+  padding: 24rpx 30rpx 22rpx 18rpx;
+}
+
+.plan-action-preview .schedule-card-time {
+  margin-bottom: 14rpx;
   font-size: 30rpx;
-  font-weight: 800;
 }
 
-.plan-preview-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10rpx;
+.plan-action-preview .schedule-card-avatar {
+  flex: 0 0 36rpx;
+  width: 36rpx;
+  height: 36rpx;
 }
 
-.plan-preview-tag {
-  font-size: 28rpx;
+.plan-action-preview .schedule-card-tag {
+  max-width: none;
   min-height: 40rpx;
   padding: 0 16rpx;
+  font-size: 26rpx;
+  line-height: 40rpx;
 }
 
-.plan-preview-status {
-  color: #7a857d;
-  font-size: 28rpx;
+.plan-action-preview .schedule-card-status {
+  font-size: 26rpx;
 }
 
-.plan-preview-status.overdue {
-  color: #d96565;
-  font-weight: 700;
-}
-
-.plan-preview-head .pill {
-  max-width: none;
-  white-space: normal;
-  word-break: break-all;
-}
-
-.plan-preview-remark {
+.plan-action-preview .schedule-card-remark {
   margin-top: 14rpx;
-  color: #7a857d;
-  font-size: 28rpx;
+  font-size: 26rpx;
   line-height: 1.5;
-  word-break: break-all;
 }
 
-.plan-action-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14rpx;
-  margin-top: 14rpx;
+.plan-action-preview .schedule-card-leaf {
+  width: 136rpx;
+  height: 108rpx;
+  right: 4rpx;
+  bottom: 4rpx;
+  opacity: 0.68;
+}
+
+.plan-action-actions {
+  margin-top: 24rpx;
+}
+
+.plan-action-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  width: 100% !important;
+  height: 92rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.plan-action-quick-row {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.plan-action-quick-item {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  min-width: 0;
+  min-height: 128rpx;
+  margin: 0;
+  padding: 16rpx 8rpx;
+  border: 0;
+  border-radius: 20rpx;
+  background: #f6f7f1;
+  color: #2f3a34;
+  box-sizing: border-box;
+}
+
+.plan-action-quick-item::after {
+  border: 0;
+}
+
+.plan-action-quick-item-active {
+  background: rgba(152, 198, 168, 0.12);
+}
+
+.plan-action-quick-item.danger {
+  color: #d96565;
+}
+
+.plan-action-quick-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 16rpx;
+  background: #fffdf7;
+}
+
+.plan-action-quick-icon.danger {
+  background: #fff2ef;
+}
+
+.plan-action-quick-icon-image {
+  width: 28rpx;
+  height: 28rpx;
+}
+
+.plan-action-quick-label {
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
 }
 
 .plan-action-btn {
@@ -663,18 +744,14 @@
   align-items: center;
   justify-content: center;
   gap: 8rpx;
-  width: 75% !important;
+  width: 100% !important;
   min-width: 0;
   height: 88rpx;
   margin: 0;
-  padding: 0 8rpx;
-  font-size: 26rpx;
+  padding: 0 24rpx;
+  font-size: 28rpx;
   font-weight: 700;
   box-sizing: border-box;
-}
-
-.plan-action-grid .plan-action-btn {
-  justify-self: center;
 }
 
 .plan-action-footer {
@@ -749,7 +826,7 @@
 }
 
 .plan-picker-action {
-  color: #8AA394;
+  color: #7FB592;
   font-size: 28rpx;
   font-weight: 700;
 }
@@ -773,14 +850,14 @@
   flex: 1;
   min-width: 0;
   padding: 16rpx 10rpx;
-  border: 2rpx solid rgba(169, 199, 181, 0.16);
+  border: 2rpx solid rgba(152, 198, 168, 0.16);
   box-shadow: none;
   text-align: center;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .schedule-kind-card.active {
-  border-color: #A9C7B5;
+  border-color: #98C6A8;
   background: rgba(232, 243, 232, 0.72);
 }
 
@@ -818,14 +895,9 @@
 }
 
 .plan-owner-row,
-.plan-tag-row,
 .plan-time-row {
   display: flex;
   gap: 14rpx;
-}
-
-.plan-tag-row {
-  flex-wrap: wrap;
 }
 
 .plan-owner-chip,
@@ -853,7 +925,7 @@
 
 .plan-owner-chip.active,
 .plan-tag-chip.active {
-  background: #A9C7B5;
+  background: #98C6A8;
   color: #fff;
 }
 
@@ -861,11 +933,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 56rpx;
-  padding: 0 22rpx;
+  flex: 0 0 72rpx;
+  width: 72rpx;
+  height: 56rpx;
   border-radius: 999rpx;
   background: #f4f0e8;
-  color: #8AA394;
+  color: #7FB592;
   font-size: 34rpx;
   font-weight: 800;
   line-height: 1;
@@ -920,7 +993,7 @@
 }
 
 .plan-picker-sheet-btn.confirm {
-  color: #8AA394;
+  color: #7FB592;
   text-align: right;
 }
 
@@ -942,7 +1015,7 @@
 .plan-picker-indicator {
   height: 72rpx;
   border-radius: 18rpx;
-  background: rgba(169, 199, 181, 0.1);
+  background: rgba(152, 198, 168, 0.1);
 }
 
 @keyframes modalSlideUp {

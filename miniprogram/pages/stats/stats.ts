@@ -1,4 +1,6 @@
-import { getCompletedRecords, type CompletedRecord } from '../../utils/data'
+import { getCompletedRecords, getPlans, type CompletedRecord, type Plan } from '../../utils/data'
+import { refreshWithLocalFirst } from '../../utils/cloud-sync'
+import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 
 type StatsRange = 'day' | 'week' | 'month' | 'year'
 
@@ -33,7 +35,7 @@ const RANGE_OPTIONS: StatsRangeOption[] = [
   { key: 'year', label: '每年' },
 ]
 
-const TAG_COLORS = ['#A9C7B5', '#7DA7D9', '#F1B86A', '#D98BB0', '#9B8DD9', '#8BC4D9', '#E09A7A', '#7BC8B8']
+const TAG_COLORS = ['#98C6A8', '#7DA7D9', '#F1B86A', '#D98BB0', '#9B8DD9', '#8BC4D9', '#E09A7A', '#7BC8B8']
 
 const formatFocusMinutes = (minutes: number) => {
   if (minutes <= 0) {
@@ -158,6 +160,19 @@ const filterRecordsByRange = (records: CompletedRecord[], range: StatsRange, anc
   return records.filter((record) => record.completedAt >= start && record.completedAt <= end)
 }
 
+const filterPlansByRange = (plans: Plan[], range: StatsRange, anchor: number) => {
+  const { start, end } = getRangeBounds(range, new Date(anchor))
+
+  return plans.filter((plan) => {
+    if (!plan.date || plan.status === 'cancelled') {
+      return false
+    }
+
+    const planTime = new Date(`${plan.date}T12:00:00`).getTime()
+    return planTime >= start && planTime <= end
+  })
+}
+
 const getTagColor = (tag: string, tagOrder: string[]) => {
   const index = tagOrder.indexOf(tag)
   return TAG_COLORS[(index >= 0 ? index : 0) % TAG_COLORS.length]
@@ -181,7 +196,9 @@ const buildPieStyle = (items: Array<{ color: string; share: number }>) => {
 const buildStatsView = (range: StatsRange, periodAnchor: number) => {
   const records = filterRecordsByRange(getCompletedRecords(), range, periodAnchor)
   const timedCount = records.filter((record) => record.completionMode === 'timed').length
-  const manualCount = records.filter((record) => record.completionMode === 'manual').length
+  const plansInRange = filterPlansByRange(getPlans(), range, periodAnchor)
+  const completedPlanCount = plansInRange.filter((plan) => plan.status === 'completed').length
+  const totalPlanCount = plansInRange.length
   const totalMinutes = records.reduce((total, record) => total + (record.actualMinutes || 0), 0)
 
   const tagMinutesMap = records.reduce<Record<string, number>>((result, record) => {
@@ -217,8 +234,8 @@ const buildStatsView = (range: StatsRange, periodAnchor: number) => {
 
   const cards: StatsCard[] = [
     { label: '总专注', value: formatFocusMinutes(totalMinutes) },
-    { label: '计时完成', value: `${timedCount}` },
-    { label: '手动完成', value: `${manualCount}` },
+    { label: '计划 完成数/总数', value: `${completedPlanCount}/${totalPlanCount}` },
+    { label: '计时完成数', value: `${timedCount}` },
   ]
 
   const rangeOption = RANGE_OPTIONS.find((item) => item.key === range)
@@ -247,6 +264,7 @@ const buildStatsView = (range: StatsRange, periodAnchor: number) => {
 
 Component({
   data: {
+    safeTopPx: 0,
     rangeOptions: RANGE_OPTIONS,
     statsRange: 'week' as StatsRange,
     periodAnchor: Date.now(),
@@ -262,15 +280,20 @@ Component({
     tagPieStyle: 'background: #e8f0e8;',
     tagPieLegend: [] as TagPieLegendView[],
     hasTagStats: false,
+    pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
     attached() {
+      const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
+      const gapPx = Math.round((16 * windowWidth) / 750)
+      this.setData({ safeTopPx: statusBarHeight + gapPx })
       this.refreshStats()
     },
   },
   pageLifetimes: {
     show() {
-      this.refreshStats()
+      refreshPageFontStyle(this)
+      refreshWithLocalFirst(() => this.refreshStats())
     },
   },
   methods: {

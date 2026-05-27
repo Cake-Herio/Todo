@@ -1,9 +1,11 @@
-<view class="calendar-page-root">
-  <navigation-bar extClass="calendar-nav-bar" title="日历" back="{{false}}" color="#2F3A34" background="#EDF4F0"></navigation-bar>
+<font-page-meta id="font-page-meta" />
+<view class="calendar-page-root" style="{{pageFontStyle}}">
+  <view class="page calendar-page" style="padding-top: {{safeTopPx}}px;">
+    <view class="page-top-header">
+      <view class="page-top-title">日历</view>
+    </view>
 
-  <view class="calendar-nav-gap"></view>
-
-  <view class="calendar-shell page">
+    <view class="calendar-shell">
     <view class="calendar-header">
       <button class="month-button prev" data-offset="-1" bindtap="changeMonth">‹</button>
       <view bindtap="openMonthPicker">
@@ -64,7 +66,7 @@
       </view>
 
       <view class="day-grid">
-        <view wx:for="{{days}}" wx:key="date" class="day-cell {{item.muted ? 'muted-day' : ''}} {{item.selected ? 'selected' : ''}}" data-date="{{item.date}}" bindtap="goDay">
+        <view wx:for="{{days}}" wx:key="date" class="day-cell {{item.muted ? 'muted-day' : ''}} {{item.selected ? 'selected' : ''}} {{item.hasItems ? '' : 'empty-day'}}" data-date="{{item.date}}" bindtap="goDay">
           <view class="day-top">
             <text class="day-number">{{item.day}}</text>
             <text wx:if="{{item.more}}" class="mini-more-badge">+{{item.more}}</text>
@@ -79,15 +81,16 @@
         </view>
       </view>
     </view>
+    </view>
   </view>
 
   <view
     wx:if="{{isMonthPickerVisible}}"
-    class="picker-mask {{isMonthPickerClosing ? 'is-closing' : ''}}"
+    class="picker-mask mask-fade {{isMonthPickerClosing ? 'is-closing' : ''}}"
     catchtap="closeMonthPicker"
     catchtouchmove="noop"
   >
-    <view class="picker-panel {{isMonthPickerClosing ? 'is-closing' : ''}}" catchtap="noop">
+    <view class="picker-panel panel-slide {{isMonthPickerClosing ? 'is-closing' : ''}}" catchtap="noop">
       <view class="picker-close" catchtap="closeMonthPicker">×</view>
       <view class="picker-header">
         <view class="picker-title">切换月份</view>

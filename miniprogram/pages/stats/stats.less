@@ -1,12 +1,9 @@
-.stats-page {
-  padding-bottom: 150rpx;
+.stats-scroll {
+  height: 100vh;
 }
 
-.stats-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24rpx 0 18rpx;
+.stats-page {
+  padding-bottom: 150rpx;
 }
 
 .stats-range-switch-wrap {
@@ -35,8 +32,8 @@
   width: calc((100% - 12rpx) / 4);
   height: calc(100% - 12rpx);
   border-radius: 999rpx;
-  background: #A9C7B5;
-  box-shadow: 0 8rpx 20rpx rgba(169, 199, 181, 0.28);
+  background: #98C6A8;
+  box-shadow: 0 8rpx 20rpx rgba(152, 198, 168, 0.28);
   transition: transform 0.24s ease;
 }
 
@@ -95,7 +92,7 @@
   padding: 0;
   border-radius: 50%;
   background: rgba(255, 253, 247, 0.78);
-  color: #8AA394;
+  color: #7FB592;
   font-size: 34rpx;
   font-weight: 800;
   line-height: 1;
@@ -103,19 +100,14 @@
 }
 
 .period-button:active {
-  background: #E9F2ED;
+  background: #E4F2E9;
   transform: scale(0.94);
 }
 
 .period-button.disabled {
-  color: rgba(138, 163, 148, 0.28);
+  color: rgba(127, 181, 146, 0.28);
   box-shadow: none;
   pointer-events: none;
-}
-
-.stats-title {
-  font-size: 42rpx;
-  font-weight: 800;
 }
 
 .stats-grid {
@@ -125,13 +117,18 @@
 }
 
 .stats-card {
-  padding: 24rpx 12rpx;
+  padding: 24rpx 10rpx;
   text-align: center;
+}
+
+.stats-card .muted {
+  font-size: 22rpx;
+  line-height: 1.35;
 }
 
 .stats-value {
   margin-bottom: 8rpx;
-  color: #8AA394;
+  color: #7FB592;
   font-size: 34rpx;
   font-weight: 900;
 }
@@ -163,7 +160,7 @@
 }
 
 .tag-time {
-  color: #8AA394;
+  color: #7FB592;
   font-size: 26rpx;
   font-weight: 700;
 }
@@ -171,14 +168,14 @@
 .bar {
   height: 16rpx;
   border-radius: 999rpx;
-  background: #E9F2ED;
+  background: #E4F2E9;
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
   border-radius: 999rpx;
-  background: linear-gradient(90deg, #A9C7B5, #C5DDD0);
+  background: linear-gradient(90deg, #98C6A8, #B8D9C5);
 }
 
 .pie-card {

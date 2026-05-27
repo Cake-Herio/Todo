@@ -1,5 +1,5 @@
-<view wx:if="{{visible}}" class="tag-create-mask" catchtouchmove="noop">
-  <view class="tag-create-panel" catchtap="noop">
+<view wx:if="{{shouldShow}}" class="tag-create-mask mask-fade {{isClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
+  <view class="tag-create-panel panel-pop {{isClosing ? 'is-closing' : ''}}" catchtap="noop">
     <view class="tag-create-header">
       <view>
         <view class="tag-create-title">新增主题</view>
@@ -24,7 +24,7 @@
         class="tag-color-hex-input"
         value="{{tagColor}}"
         maxlength="7"
-        placeholder="#A9C7B5"
+        placeholder="#98C6A8"
         bindinput="onHexInput"
       />
     </view>
@@ -49,7 +49,7 @@
         step="1"
         value="{{hueValue}}"
         activeColor="{{tagColor}}"
-        backgroundColor="#E9F2ED"
+        backgroundColor="#E4F2E9"
         block-size="22"
         bindchanging="onHueChanging"
         bindchange="onHueChange"

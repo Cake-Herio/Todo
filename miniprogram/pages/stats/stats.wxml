@@ -1,13 +1,9 @@
-<navigation-bar title="统计" back="{{false}}" color="#2F3A34" background="#EDF4F0"></navigation-bar>
-
-<scroll-view class="scroll-page" scroll-y type="list">
-  <view class="page stats-page">
-    <view class="stats-header">
-      <view>
-        <view class="stats-title">{{rangeLabel}}统计</view>
-        <view class="muted">按标签、成员和时间范围查看</view>
-      </view>
-      <view class="pill">全部成员</view>
+<font-page-meta id="font-page-meta" />
+<scroll-view class="scroll-page stats-scroll" style="{{pageFontStyle}}" scroll-y type="list">
+  <view class="page stats-page" style="padding-top: {{safeTopPx}}px;">
+    <view class="page-top-header">
+      <view class="page-top-title">{{rangeLabel}}统计</view>
+      <view class="muted">按标签、成员和时间范围查看</view>
     </view>
 
     <view class="stats-range-switch-wrap">

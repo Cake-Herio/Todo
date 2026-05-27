@@ -1,31 +1,24 @@
-<navigation-bar title="日计划" titleIcon="/images/icons/nav-day.svg" color="#2F3A34" background="#EDF4F0"></navigation-bar>
-
+<font-page-meta id="font-page-meta" />
 <template name="planCard">
-  <view class="card-layout {{plan.remark ? 'has-remark' : 'no-remark'}} {{isTimed ? 'is-timed' : ''}}">
-    <view wx:if="{{showTime}}" class="card-time">{{plan.time}}</view>
-
-    <view class="card-title-section">
-      <view class="card-head">
-        <image class="card-avatar {{plan.color}}" src="{{plan.ownerAvatarUrl}}" mode="aspectFill"></image>
-        <text class="pill {{plan.color === 'blue' ? 'pill-blue' : ''}} card-tag-text">{{plan.tag}}</text>
+  <view class="schedule-card {{isTimed ? 'is-timed' : ''}}">
+    <view class="schedule-card-inner">
+      <view wx:if="{{showTime && plan.time}}" class="schedule-card-time">{{plan.time}}</view>
+      <view class="schedule-card-meta">
+        <image class="schedule-card-avatar {{plan.color}}" src="{{plan.ownerAvatarUrl}}" mode="aspectFill"></image>
+        <text class="pill {{plan.color === 'blue' ? 'pill-blue' : ''}} schedule-card-tag">{{plan.tag}}</text>
+        <text wx:if="{{showStatus && plan.status}}" class="schedule-card-status {{plan.status === '逾期' ? 'overdue' : ''}}">{{plan.status}}</text>
       </view>
+      <view wx:if="{{plan.remark}}" class="schedule-card-remark">{{plan.remark}}</view>
     </view>
-
-    <view wx:if="{{plan.remark}}" class="card-body">
-      <view class="card-body-inner">
-        <text class="card-remark">{{plan.remark}}</text>
-      </view>
-    </view>
+    <image class="schedule-card-leaf" src="/images/icons/card-leaf-deco.png" mode="aspectFit"></image>
   </view>
 </template>
 
-<scroll-view class="scroll-page" scroll-y="{{!isPlanActionVisible}}" type="list">
-  <view class="page day-page">
-    <view class="day-header">
-      <view>
-        <view class="date-title">{{dateTitle}}</view>
-        <view class="muted">时间轴 · 时段 · 全天</view>
-      </view>
+<scroll-view class="scroll-page day-scroll" style="{{pageFontStyle}}" scroll-y="{{!isPlanActionVisible}}" type="list">
+  <view class="page day-page" style="padding-top: {{safeTopPx}}px;">
+    <view class="page-top-header day-date-back" bindtap="goBack">
+      <view class="page-top-title">{{dateTitle}}</view>
+      <view class="muted">时间轴 · 时段 · 全天</view>
     </view>
 
     <view class="filter-row">
@@ -87,7 +80,7 @@
             data-id="{{item.id}}"
             bindtap="onPlanTap"
           >
-            <template is="planCard" data="{{plan: item, showTime: true, isTimed: true}}" />
+            <template is="planCard" data="{{plan: item, showTime: true, showStatus: true, isTimed: true}}" />
           </view>
           <view wx:if="{{timedPlans.length === 0}}" class="column-empty">无</view>
         </view>
@@ -109,7 +102,7 @@
                 data-id="{{item.id}}"
                 bindtap="onPlanTap"
               >
-                <template is="planCard" data="{{plan: item, showTime: false}}" />
+                <template is="planCard" data="{{plan: item, showTime: false, showStatus: true}}" />
               </view>
             </view>
           </view>
@@ -128,7 +121,7 @@
                 data-id="{{item.id}}"
                 bindtap="onPlanTap"
               >
-                <template is="planCard" data="{{plan: item, showTime: false}}" />
+                <template is="planCard" data="{{plan: item, showTime: false, showStatus: true}}" />
               </view>
             </view>
           </view>
@@ -147,7 +140,7 @@
                 data-id="{{item.id}}"
                 bindtap="onPlanTap"
               >
-                <template is="planCard" data="{{plan: item, showTime: false}}" />
+                <template is="planCard" data="{{plan: item, showTime: false, showStatus: true}}" />
               </view>
             </view>
           </view>
@@ -165,7 +158,7 @@
               data-id="{{item.id}}"
               bindtap="onPlanTap"
             >
-              <template is="planCard" data="{{plan: item, showTime: false}}" />
+              <template is="planCard" data="{{plan: item, showTime: false, showStatus: true}}" />
             </view>
             <view wx:if="{{allDayPlans.length === 0}}" class="column-empty">无</view>
           </view>
@@ -175,41 +168,44 @@
   </view>
 </scroll-view>
 
-<view wx:if="{{isPlanActionVisible && activePlan}}" class="plan-action-mask" catchtap="closePlanAction" catchtouchmove="noop">
-  <view class="plan-action-panel" catchtap="noop">
+<view wx:if="{{isPlanActionVisible && activePlan}}" class="plan-action-mask mask-fade {{isPlanActionClosing ? 'is-closing' : ''}}" catchtap="closePlanAction" catchtouchmove="noop">
+  <view class="plan-action-panel panel-pop {{isPlanActionClosing ? 'is-closing' : ''}}" catchtap="noop">
     <view class="plan-action-close" catchtap="closePlanAction">×</view>
 
     <block wx:if="{{!isPlanEditVisible}}">
       <view class="plan-action-title">{{activePlan.tag}}</view>
       <view class="plan-action-subtitle muted">选择要进行的操作</view>
 
-      <view class="plan-action-preview card">
-        <view wx:if="{{activePlan.time}}" class="plan-preview-time">{{activePlan.time}}</view>
-        <view class="plan-preview-head">
-          <image class="card-avatar {{activePlan.color}}" src="{{activePlan.ownerAvatarUrl}}" mode="aspectFill"></image>
-          <text class="pill {{activePlan.color === 'blue' ? 'pill-blue' : ''}} plan-preview-tag">{{activePlan.tag}}</text>
-          <text class="plan-preview-status {{activePlan.status === '逾期' ? 'overdue' : ''}}">{{activePlan.status}}</text>
-        </view>
-        <view wx:if="{{activePlan.remark}}" class="plan-preview-remark">{{activePlan.remark}}</view>
+      <view class="plan-action-preview board-card {{activePlan.color}} {{activePlan.isExpired ? 'expired' : ''}}">
+        <template is="planCard" data="{{plan: activePlan, showTime: true, showStatus: true, isTimed: false}}" />
       </view>
 
-      <view class="plan-action-grid">
-        <button class="plan-action-btn secondary-button" bindtap="openPlanEdit">
-          <image class="plan-action-btn-icon" src="/images/icons/edit.svg" mode="aspectFit"></image>
-          <text>编辑计划</text>
-        </button>
-        <button class="plan-action-btn primary-button" bindtap="startPlanFocus">
+      <view class="plan-action-actions">
+        <button class="plan-action-primary primary-button" bindtap="startPlanFocus">
           <image class="plan-action-btn-icon" src="/images/icons/timer-white.svg" mode="aspectFit"></image>
           <text>开始计时</text>
         </button>
-        <button class="plan-action-btn secondary-button" bindtap="completeActivePlan">
-          <image class="plan-action-btn-icon" src="/images/icons/check.svg" mode="aspectFit"></image>
-          <text>标记完成</text>
-        </button>
-        <button class="plan-action-btn danger-button" bindtap="deleteActivePlan">
-          <image class="plan-action-btn-icon" src="/images/icons/delete.svg" mode="aspectFit"></image>
-          <text>删除计划</text>
-        </button>
+
+        <view class="plan-action-quick-row">
+          <button class="plan-action-quick-item" hover-class="plan-action-quick-item-active" bindtap="openPlanEdit">
+            <view class="plan-action-quick-icon">
+              <image class="plan-action-quick-icon-image" src="/images/icons/edit.svg" mode="aspectFit"></image>
+            </view>
+            <text class="plan-action-quick-label">编辑计划</text>
+          </button>
+          <button class="plan-action-quick-item" hover-class="plan-action-quick-item-active" bindtap="completeActivePlan">
+            <view class="plan-action-quick-icon">
+              <image class="plan-action-quick-icon-image" src="/images/icons/check.svg" mode="aspectFit"></image>
+            </view>
+            <text class="plan-action-quick-label">标记完成</text>
+          </button>
+          <button class="plan-action-quick-item danger" hover-class="plan-action-quick-item-active" bindtap="deleteActivePlan">
+            <view class="plan-action-quick-icon danger">
+              <image class="plan-action-quick-icon-image" src="/images/icons/delete.svg" mode="aspectFit"></image>
+            </view>
+            <text class="plan-action-quick-label">删除计划</text>
+          </button>
+        </view>
       </view>
     </block>
 
@@ -219,31 +215,48 @@
 
       <scroll-view class="plan-edit-scroll" scroll-y enhanced show-scrollbar="{{false}}">
         <view class="plan-edit-form">
-          <view class="plan-form-label">归属成员</view>
-          <view class="plan-owner-row">
-            <view class="plan-owner-chip {{editPlanForm.ownerKey === 'me' ? 'active' : ''}}" data-owner="me" bindtap="chooseEditPlanOwner">
-              <image class="filter-avatar green" src="/assets/avatars/me.png" mode="aspectFill"></image>
-              <text>我</text>
+          <block wx:if="{{!singleUserMode}}">
+            <view class="plan-form-label">归属成员</view>
+            <view class="plan-owner-row">
+              <view class="plan-owner-chip {{editPlanForm.ownerKey === 'me' ? 'active' : ''}}" data-owner="me" bindtap="chooseEditPlanOwner">
+                <image class="filter-avatar green" src="/assets/avatars/me.png" mode="aspectFill"></image>
+                <text>我</text>
+              </view>
+              <view class="plan-owner-chip {{editPlanForm.ownerKey === 'partner' ? 'active' : ''}}" data-owner="partner" bindtap="chooseEditPlanOwner">
+                <image class="filter-avatar blue" src="/assets/avatars/partner.png" mode="aspectFill"></image>
+                <text>对方</text>
+              </view>
             </view>
-            <view class="plan-owner-chip {{editPlanForm.ownerKey === 'partner' ? 'active' : ''}}" data-owner="partner" bindtap="chooseEditPlanOwner">
-              <image class="filter-avatar blue" src="/assets/avatars/partner.png" mode="aspectFill"></image>
-              <text>对方</text>
-            </view>
-          </view>
+          </block>
 
           <view class="plan-form-label">主题标签</view>
-          <view class="plan-tag-row">
-            <view
-              wx:for="{{quickTags}}"
-              wx:key="name"
-              class="plan-tag-chip {{editPlanForm.tag === item.name ? 'active' : ''}}"
-              data-tag="{{item.name}}"
-              bindtap="chooseEditPlanTag"
+          <view class="tag-scroll-wrap">
+            <view class="tag-scroll-fade tag-scroll-fade-left {{showPlanTagScrollFadeLeft ? 'is-visible' : ''}}"></view>
+            <scroll-view
+              class="tag-scroll"
+              scroll-x
+              enhanced
+              show-scrollbar="{{false}}"
+              enable-flex
+              bindscroll="onPlanTagScroll"
             >
-              <text class="plan-tag-dot" style="background: {{item.color}};"></text>
-              {{item.name}}
+              <view class="tag-scroll-list">
+                <view
+                  wx:for="{{quickTags}}"
+                  wx:key="name"
+                  class="plan-tag-chip {{editPlanForm.tag === item.name ? 'active' : ''}}"
+                  data-tag="{{item.name}}"
+                  bindtap="chooseEditPlanTag"
+                >
+                  <text class="plan-tag-dot" style="background: {{item.color}};"></text>
+                  {{item.name}}
+                </view>
+              </view>
+            </scroll-view>
+            <view class="tag-scroll-trail">
+              <view class="tag-scroll-fade tag-scroll-fade-right {{showPlanTagScrollFadeRight ? 'is-visible' : ''}}"></view>
+              <view class="plan-tag-add" bindtap="openTagCreateSheet">+</view>
             </view>
-            <view class="plan-tag-add" bindtap="openTagCreateSheet">+</view>
           </view>
 
           <view class="plan-form-label">备注</view>
@@ -315,8 +328,8 @@
   </view>
 </view>
 
-<view wx:if="{{isPickerSheetVisible}}" class="plan-picker-sheet-mask" catchtap="closePickerSheet" catchtouchmove="noop">
-  <view class="plan-picker-sheet" catchtap="noop">
+<view wx:if="{{isPickerSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isPickerSheetClosing ? 'is-closing' : ''}}" catchtap="closePickerSheet" catchtouchmove="noop">
+  <view class="plan-picker-sheet panel-slide {{isPickerSheetClosing ? 'is-closing' : ''}}" catchtap="noop">
     <view class="plan-picker-sheet-header">
       <text class="plan-picker-sheet-btn" bindtap="closePickerSheet">取消</text>
       <text class="plan-picker-sheet-title">{{pickerSheetTitle}}</text>
@@ -370,4 +383,4 @@
   </view>
 </view>
 
-<tag-create-sheet visible="{{isTagCreateVisible}}" bind:close="closeTagCreateSheet" bind:confirm="onTagCreateConfirm" />
+<tag-create-sheet visible="{{isTagCreateVisible}}" pageFontStyle="{{pageFontStyle}}" bind:close="closeTagCreateSheet" bind:confirm="onTagCreateConfirm" />
