@@ -1,22 +1,58 @@
+import { isCloudEnabled, SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
+import { resolveTagBindingFromList } from './tag-binding'
+import { getSession, isSessionReady, isSoloMode } from './session'
+
+export type PlanTagVisibility = 'shared' | 'private'
+
 export interface PlanTagOption {
+  id: string
   name: string
   color: string
+  visibility: PlanTagVisibility
+  ownerOpenid?: string
+  sharedSpaceId?: string
+  isBuiltin?: boolean
 }
 
-const CUSTOM_TAG_STORAGE_KEY = 'myforest_custom_plan_tags_v1'
+export interface PlanTagView extends PlanTagOption {
+  textColor: string
+}
+
+interface CloudPlanTagDoc {
+  id: string
+  name: string
+  color: string
+  visibility: PlanTagVisibility
+  ownerOpenid?: string
+  sharedSpaceId?: string
+  createdAt?: number
+  updatedAt?: number
+}
+
+interface TagCloudResult {
+  ok?: boolean
+  message?: string
+  tags?: CloudPlanTagDoc[]
+  tag?: CloudPlanTagDoc
+}
+
+const TAG_CACHE_KEY = 'myforest_plan_tags_cache_v1'
+const LEGACY_CUSTOM_KEY = 'myforest_custom_plan_tags_v1'
+const SOLO_TAGS_KEY = 'myforest_solo_plan_tags_v1'
+const TAGS_MIGRATED_KEY = 'myforest_plan_tags_migrated_v1'
 
 const DEFAULT_TAG_OPTIONS: PlanTagOption[] = [
-  { name: '英语', color: '#98C6A8' },
-  { name: '写代码', color: '#98C6A8' },
-  { name: '阅读', color: '#98C6A8' },
-  { name: '运动', color: '#7DA7D9' },
-  { name: '冥想', color: '#9B8DD9' },
-  { name: '写作', color: '#F1B86A' },
-  { name: '学习', color: '#8BC4D9' },
-  { name: '整理', color: '#7BC8B8' },
-  { name: '复盘', color: '#D98BB0' },
-  { name: '绘画', color: '#E09A7A' },
-  { name: '其它', color: '#7A857D' },
+  { id: 'builtin-english', name: '英语', color: '#98C6A8', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-code', name: '写代码', color: '#98C6A8', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-reading', name: '阅读', color: '#98C6A8', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-sport', name: '运动', color: '#7DA7D9', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-meditation', name: '冥想', color: '#9B8DD9', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-writing', name: '写作', color: '#F1B86A', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-study', name: '学习', color: '#8BC4D9', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-organize', name: '整理', color: '#7BC8B8', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-review', name: '复盘', color: '#D98BB0', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-draw', name: '绘画', color: '#E09A7A', visibility: 'shared', isBuiltin: true },
+  { id: 'builtin-other', name: '其它', color: '#7A857D', visibility: 'shared', isBuiltin: true },
 ]
 
 export const TAG_PALETTE = [
@@ -40,30 +76,251 @@ export const TAG_PALETTE = [
 
 export const DEFAULT_PLAN_TAGS = DEFAULT_TAG_OPTIONS.map((item) => item.name)
 
-const getCustomTagOptions = () => {
-  const stored = wx.getStorageSync(CUSTOM_TAG_STORAGE_KEY) as PlanTagOption[] | ''
-
-  if (!Array.isArray(stored)) {
-    return []
-  }
-
-  return stored.filter((item) => item && item.name && item.color)
-}
-
 const normalizeHexColor = (value: string) => {
   const trimmed = value.trim()
-
   if (!trimmed) {
     return ''
   }
 
   const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`
-
   if (!/^#[0-9A-Fa-f]{6}$/.test(withHash)) {
     return ''
   }
 
   return withHash.toUpperCase()
+}
+
+const mapCloudTag = (doc: CloudPlanTagDoc): PlanTagOption => ({
+  id: doc.id,
+  name: doc.name,
+  color: doc.color,
+  visibility: doc.visibility,
+  ownerOpenid: doc.ownerOpenid,
+  sharedSpaceId: doc.sharedSpaceId,
+})
+
+const getLegacyCustomTags = (): PlanTagOption[] => {
+  const stored = wx.getStorageSync(LEGACY_CUSTOM_KEY) as Array<{ name: string; color: string }> | ''
+  if (!Array.isArray(stored)) {
+    return []
+  }
+
+  return stored
+    .filter((item) => item?.name && item?.color)
+    .map((item, index) => ({
+      id: `legacy-${index}-${item.name}`,
+      name: item.name,
+      color: normalizeHexColor(item.color) || item.color,
+      visibility: 'private' as const,
+    }))
+}
+
+const getSoloTags = (): PlanTagOption[] => {
+  const stored = wx.getStorageSync(SOLO_TAGS_KEY) as PlanTagOption[] | ''
+  if (!Array.isArray(stored)) {
+    return []
+  }
+
+  return stored.filter((item) => item?.name && item?.color)
+}
+
+const saveSoloTags = (tags: PlanTagOption[]) => {
+  wx.setStorageSync(SOLO_TAGS_KEY, tags)
+}
+
+export const getCachedCloudTags = (): PlanTagOption[] => {
+  const stored = wx.getStorageSync(TAG_CACHE_KEY) as PlanTagOption[] | ''
+  if (!Array.isArray(stored)) {
+    return []
+  }
+
+  return stored.filter((item) => item?.name && item?.color && item?.id)
+}
+
+export const saveCachedCloudTags = (tags: PlanTagOption[]) => {
+  wx.setStorageSync(TAG_CACHE_KEY, tags)
+}
+
+const mergeTagsByName = (...groups: PlanTagOption[]) => {
+  const map = new Map<string, PlanTagOption>()
+  groups.forEach((item) => {
+    if (!item?.name) {
+      return
+    }
+    map.set(item.name, item)
+  })
+  return Array.from(map.values())
+}
+
+const getEffectiveTags = (): PlanTagOption[] => {
+  if (isSoloMode()) {
+    return mergeTagsByName(...DEFAULT_TAG_OPTIONS, ...getSoloTags(), ...getLegacyCustomTags())
+  }
+
+  if (isSessionReady()) {
+    const cloudTags = getCachedCloudTags()
+    if (cloudTags.length) {
+      return mergeTagsByName(...DEFAULT_TAG_OPTIONS, ...cloudTags)
+    }
+  }
+
+  return mergeTagsByName(...DEFAULT_TAG_OPTIONS, ...getLegacyCustomTags())
+}
+
+const callTagCloud = async (action: 'listTags' | 'upsertTag' | 'deleteTag', payload?: Record<string, unknown>) => {
+  const result = await wx.cloud.callFunction({
+    name: SHARED_SPACE_CLOUD_FUNCTION,
+    data: {
+      action,
+      payload,
+    },
+  })
+
+  return result.result as TagCloudResult
+}
+
+const migrateLegacyTagsToCloud = async () => {
+  if (!isSessionReady() || wx.getStorageSync(TAGS_MIGRATED_KEY)) {
+    return
+  }
+
+  const legacyTags = getLegacyCustomTags()
+  for (const tag of legacyTags) {
+    try {
+      await callTagCloud('upsertTag', {
+        id: tag.id,
+        name: tag.name,
+        color: tag.color,
+        visibility: 'private',
+      })
+    } catch (error) {
+      console.warn('[plan-tags] migrate legacy tag failed', error)
+    }
+  }
+
+  wx.removeStorageSync(LEGACY_CUSTOM_KEY)
+  wx.setStorageSync(TAGS_MIGRATED_KEY, true)
+}
+
+export const syncPlanTagsFromCloud = async (): Promise<boolean> => {
+  if (!isCloudEnabled() || !isSessionReady()) {
+    return false
+  }
+
+  try {
+    await migrateLegacyTagsToCloud()
+    const payload = await callTagCloud('listTags')
+    if (!payload?.ok) {
+      throw new Error(payload?.message || 'listTags 失败')
+    }
+
+    const tags = (payload.tags || []).map(mapCloudTag)
+    const changed = JSON.stringify(getCachedCloudTags()) !== JSON.stringify(tags)
+    saveCachedCloudTags(tags)
+    return changed
+  } catch (error) {
+    console.warn('[plan-tags] sync failed', error)
+    return false
+  }
+}
+
+export const getPlanTagOptions = (): PlanTagOption[] => getEffectiveTags()
+
+export const getPlanTagById = (id: string) => getPlanTagOptions().find((item) => item.id === id)
+
+export const getPlanTagNames = () => getPlanTagOptions().map((item) => item.name)
+
+export const resolveTagBinding = (tag: string, tagId?: string) =>
+  resolveTagBindingFromList(tag, tagId, getPlanTagOptions())
+
+export const isTagNameTaken = (name: string, excludeId?: string) => {
+  const trimmedName = name.trim()
+  return getPlanTagOptions().some((item) => item.name === trimmedName && item.id !== excludeId)
+}
+
+export const getSharedPlanTags = (): PlanTagView[] =>
+  getCachedCloudTags()
+    .filter((item) => item.visibility === 'shared')
+    .map((item) => ({
+      ...item,
+      textColor: getContrastTextColor(item.color),
+    }))
+
+export const getPrivatePlanTags = (): PlanTagView[] => {
+  const session = getSession()
+  return getCachedCloudTags()
+    .filter((item) => item.visibility === 'private' && item.ownerOpenid === session?.openid)
+    .map((item) => ({
+      ...item,
+      textColor: getContrastTextColor(item.color),
+    }))
+}
+
+export const resolvePlanTag = (tag: string) => {
+  const names = getPlanTagNames()
+  return names.includes(tag) ? tag : '其它'
+}
+
+const parseHexChannels = (hex: string) => {
+  const normalized = normalizeHexColor(hex)
+  if (!normalized) {
+    return null
+  }
+
+  return {
+    r: parseInt(normalized.slice(1, 3), 16),
+    g: parseInt(normalized.slice(3, 5), 16),
+    b: parseInt(normalized.slice(5, 7), 16),
+  }
+}
+
+const toLinearChannel = (channel: number) => {
+  const value = channel / 255
+  return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+}
+
+export const getRelativeLuminance = (hex: string) => {
+  const channels = parseHexChannels(hex)
+  if (!channels) {
+    return 0
+  }
+
+  const r = toLinearChannel(channels.r)
+  const g = toLinearChannel(channels.g)
+  const b = toLinearChannel(channels.b)
+
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+export const getContrastTextColor = (backgroundColor: string) => {
+  return getRelativeLuminance(backgroundColor) > 0.56 ? '#2F3A34' : '#FFFFFF'
+}
+
+export const getPlanTagColor = (tag: string) => {
+  const byId = getPlanTagById(tag)
+  if (byId) {
+    return byId.color
+  }
+
+  const resolved = resolvePlanTag(tag)
+  return getPlanTagOptions().find((item) => item.name === resolved)?.color || '#7A857D'
+}
+
+export const getTagPillColorsById = (tagId: string) => {
+  const tag = getPlanTagById(tagId)
+  const backgroundColor = tag?.color || '#7A857D'
+  return {
+    backgroundColor,
+    textColor: getContrastTextColor(backgroundColor),
+  }
+}
+
+export const getTagPillColors = (tag: string) => {
+  const backgroundColor = getPlanTagColor(tag)
+  return {
+    backgroundColor,
+    textColor: getContrastTextColor(backgroundColor),
+  }
 }
 
 export const hslToHex = (hue: number, saturation = 62, lightness = 48) => {
@@ -99,32 +356,52 @@ export const hslToHex = (hue: number, saturation = 62, lightness = 48) => {
   }
 
   const toHex = (channel: number) => Math.round((channel + m) * 255).toString(16).padStart(2, '0')
-
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase()
 }
 
-export const getPlanTagOptions = (): PlanTagOption[] => {
-  const map = new Map<string, PlanTagOption>()
+export const hexToHsl = (hex: string) => {
+  const channels = parseHexChannels(hex)
+  if (!channels) {
+    return { h: 0, s: 62, l: 48 }
+  }
 
-  DEFAULT_TAG_OPTIONS.forEach((item) => {
-    map.set(item.name, item)
-  })
+  const r = channels.r / 255
+  const g = channels.g / 255
+  const b = channels.b / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const delta = max - min
+  const lightness = (max + min) / 2
 
-  getCustomTagOptions().forEach((item) => {
-    map.set(item.name, item)
-  })
+  if (delta === 0) {
+    return { h: 0, s: 0, l: Math.round(lightness * 100) }
+  }
 
-  return Array.from(map.values())
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min)
+
+  let hue = 0
+  if (max === r) {
+    hue = ((g - b) / delta) % 6
+  } else if (max === g) {
+    hue = (b - r) / delta + 2
+  } else {
+    hue = (r - g) / delta + 4
+  }
+
+  return {
+    h: Math.round((((hue * 60) % 360) + 360) % 360),
+    s: Math.round(saturation * 100),
+    l: Math.round(lightness * 100),
+  }
 }
 
-export const getPlanTagNames = () => getPlanTagOptions().map((item) => item.name)
+export const hexToHue = (hex: string) => hexToHsl(hex).h
 
-export const resolvePlanTag = (tag: string) => {
-  const names = getPlanTagNames()
-  return names.includes(tag) ? tag : '其它'
-}
-
-export const addPlanTagOption = (name: string, color: string) => {
+export const addPlanTagOption = async (
+  name: string,
+  color: string,
+  visibility: PlanTagVisibility = 'private',
+): Promise<{ ok: boolean; message?: string; tagId?: string }> => {
   const trimmedName = name.trim()
   const normalizedColor = normalizeHexColor(color)
 
@@ -136,16 +413,127 @@ export const addPlanTagOption = (name: string, color: string) => {
     return { ok: false, message: '请选择有效颜色' }
   }
 
-  if (getPlanTagOptions().some((item) => item.name === trimmedName)) {
+  if (isTagNameTaken(trimmedName)) {
     return { ok: false, message: '这个主题已存在' }
   }
 
-  const customTags = getCustomTagOptions()
-  customTags.push({
+  if (isSessionReady()) {
+    try {
+      const payload = await callTagCloud('upsertTag', {
+        name: trimmedName,
+        color: normalizedColor,
+        visibility,
+      })
+
+      if (!payload?.ok || !payload.tag) {
+        return { ok: false, message: payload?.message || '保存标签失败' }
+      }
+
+      await syncPlanTagsFromCloud()
+      return { ok: true, tagId: payload.tag.id }
+    } catch (error) {
+      console.warn('[plan-tags] upsert failed', error)
+      return { ok: false, message: '保存标签失败' }
+    }
+  }
+
+  const nextTag: PlanTagOption = {
+    id: `solo-${Date.now()}`,
     name: trimmedName,
     color: normalizedColor,
-  })
-  wx.setStorageSync(CUSTOM_TAG_STORAGE_KEY, customTags)
+    visibility: 'private',
+  }
+  saveSoloTags([...getSoloTags(), nextTag])
+  return { ok: true, tagId: nextTag.id }
+}
 
+export const updatePlanTagOption = async (
+  id: string,
+  name: string,
+  color: string,
+): Promise<{ ok: boolean; message?: string; tagId?: string; name?: string }> => {
+  const trimmedName = name.trim()
+  const normalizedColor = normalizeHexColor(color)
+
+  if (!id) {
+    return { ok: false, message: '缺少标签 id' }
+  }
+
+  if (!trimmedName) {
+    return { ok: false, message: '请输入主题名称' }
+  }
+
+  if (!normalizedColor) {
+    return { ok: false, message: '请选择有效颜色' }
+  }
+
+  if (isTagNameTaken(trimmedName, id)) {
+    return { ok: false, message: '这个主题已存在' }
+  }
+
+  const existing = getPlanTagById(id)
+  if (!existing || existing.isBuiltin) {
+    return { ok: false, message: '无法修改此标签' }
+  }
+
+  if (isSessionReady()) {
+    try {
+      const payload = await callTagCloud('upsertTag', {
+        id,
+        name: trimmedName,
+        color: normalizedColor,
+        visibility: existing.visibility,
+      })
+
+      if (!payload?.ok || !payload.tag) {
+        return { ok: false, message: payload?.message || '保存标签失败' }
+      }
+
+      await syncPlanTagsFromCloud()
+      return { ok: true, tagId: id, name: trimmedName }
+    } catch (error) {
+      console.warn('[plan-tags] update failed', error)
+      return { ok: false, message: '保存标签失败' }
+    }
+  }
+
+  const soloTags = getSoloTags()
+  const targetIndex = soloTags.findIndex((item) => item.id === id)
+  if (targetIndex < 0) {
+    return { ok: false, message: '标签不存在' }
+  }
+
+  const nextTags = [...soloTags]
+  nextTags[targetIndex] = {
+    ...nextTags[targetIndex],
+    name: trimmedName,
+    color: normalizedColor,
+  }
+  saveSoloTags(nextTags)
+  return { ok: true, tagId: id, name: trimmedName }
+}
+
+export const deletePlanTagOption = async (id: string): Promise<{ ok: boolean; message?: string }> => {
+  if (!id) {
+    return { ok: false, message: '缺少标签 id' }
+  }
+
+  if (isSessionReady()) {
+    try {
+      const payload = await callTagCloud('deleteTag', { id })
+      if (!payload?.ok) {
+        return { ok: false, message: payload?.message || '删除标签失败' }
+      }
+
+      saveCachedCloudTags(getCachedCloudTags().filter((item) => item.id !== id))
+      await syncPlanTagsFromCloud()
+      return { ok: true }
+    } catch (error) {
+      console.warn('[plan-tags] delete failed', error)
+      return { ok: false, message: '删除标签失败' }
+    }
+  }
+
+  saveSoloTags(getSoloTags().filter((item) => item.id !== id))
   return { ok: true }
 }

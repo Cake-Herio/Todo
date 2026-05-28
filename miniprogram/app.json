@@ -8,6 +8,7 @@
     "pages/completed-day/completed-day",
     "pages/stats/stats",
     "pages/tags/tags",
+    "pages/focus-records/focus-records",
     "pages/settings/settings",
     "pages/logs/logs"
   ],

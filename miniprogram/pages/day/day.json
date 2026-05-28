@@ -1,6 +1,8 @@
-{
-  "usingComponents": {
-    "font-page-meta": "/components/font-page-meta/font-page-meta",
-    "tag-create-sheet": "/components/tag-create-sheet/tag-create-sheet"
-  }
-}
+{
+  "usingComponents": {
+    "font-page-meta": "/components/font-page-meta/font-page-meta",
+    "tag-create-sheet": "/components/tag-create-sheet/tag-create-sheet",
+    "owner-filter-bar": "/components/owner-filter-bar/owner-filter-bar",
+    "plan-tag-pill": "/components/plan-tag-pill/plan-tag-pill"
+  }
+}

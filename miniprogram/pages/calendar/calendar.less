@@ -239,27 +239,11 @@ page {
   align-items: center;
   gap: 4rpx;
   margin-top: 4rpx;
-  padding: 2rpx 6rpx 2rpx 2rpx;
-  border-radius: 8rpx;
+  padding: 0;
   font-size: 18rpx;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.mini-plan.green {
-  background: #E4F2E9;
-  color: #7FB592;
-}
-
-.mini-plan.blue {
-  background: #e9f1fb;
-  color: #5d8cc3;
-}
-
-.mini-plan.gray {
-  background: #ececea;
-  color: #9aa39a;
 }
 
 .mini-avatar {
@@ -283,11 +267,11 @@ page {
   opacity: 0.82;
 }
 
-.mini-tag {
+.mini-plan plan-tag-pill,
+.mini-plan-tag {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .mini-check {
@@ -308,7 +292,7 @@ page {
   position: relative;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  width: 100%;
+  width: 56%;
   height: 84rpx;
   padding: 6rpx;
   border-radius: 999rpx;
@@ -354,6 +338,34 @@ page {
 
 .calendar-view-switch-item.active {
   color: #fff;
+}
+
+.calendar-swipe-area {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.calendar-swiper {
+  height: 100%;
+}
+
+.calendar-swiper-item {
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.calendar-swiper-slide {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0 16rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-swipe-area .calendar-card {
+  flex: 1;
+  min-height: 0;
 }
 
 .picker-mask {

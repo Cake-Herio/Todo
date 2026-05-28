@@ -1,8 +1,8 @@
 // app.ts
 import { ensureLocalData } from './utils/data'
-import { initCloud, syncFromCloud } from './utils/cloud-sync'
+import { initCloud, bootstrapSharedSpace } from './utils/cloud-sync'
 import { applyFontOnLaunch } from './utils/font-preference'
-import { isSessionReady } from './utils/session'
+import { isSessionReady, isSoloMode, tryRestoreSessionFromCloud } from './utils/session'
 
 App<IAppOption>({
   globalData: {
@@ -17,12 +17,12 @@ App<IAppOption>({
   },
   async bootstrapCloudSession() {
     try {
-      if (!isSessionReady()) {
-        return
-      }
+      await tryRestoreSessionFromCloud()
 
-      await syncFromCloud()
-      this.globalData.cloudReady = true
+      if (isSessionReady() || isSoloMode()) {
+        await bootstrapSharedSpace()
+        this.globalData.cloudReady = true
+      }
     } catch (error) {
       console.warn('[cloud] bootstrap failed', error)
     }

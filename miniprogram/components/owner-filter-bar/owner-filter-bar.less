@@ -1,0 +1,117 @@
+.owner-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin: 22rpx 0 16rpx;
+  min-width: 0;
+}
+
+.owner-filter-pinned {
+  flex: 0 0 auto;
+}
+
+.owner-filter-scroll-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.owner-filter-scroll-wrap.is-full {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.owner-filter-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.owner-filter-scroll-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 16rpx;
+  min-width: min-content;
+  padding-right: 8rpx;
+}
+
+.owner-filter-scroll-fade {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 2;
+}
+
+.owner-filter-scroll-fade.is-visible {
+  opacity: 1;
+}
+
+.owner-filter-scroll-fade-left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56rpx;
+  height: 100%;
+  background: linear-gradient(270deg, rgba(247, 243, 234, 0) 0%, #f7f3ea 72%);
+}
+
+.owner-filter-scroll-fade-right {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 56rpx;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(247, 243, 234, 0) 0%, #f7f3ea 72%);
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  min-height: 58rpx;
+  padding: 8rpx 18rpx 8rpx 10rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 253, 247, 0.72);
+  color: #7a857d;
+  font-size: 26rpx;
+  flex: 0 0 auto;
+}
+
+.filter-chip.active {
+  background: #98C6A8;
+  color: #fff;
+  font-weight: 700;
+}
+
+.filter-avatars {
+  display: flex;
+  align-items: center;
+}
+
+.filter-avatar {
+  width: 40rpx;
+  height: 40rpx;
+  border: 3rpx solid #fffdf7;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.filter-avatar + .filter-avatar {
+  margin-left: -12rpx;
+}
+
+.filter-avatar.green {
+  border-color: #D5E4DC;
+}
+
+.filter-avatar.blue {
+  border-color: #dceafd;
+}
+
+.filter-chip.active .filter-avatar {
+  border-color: rgba(255, 255, 255, 0.72);
+}
+
+.filter-label {
+  font-size: 24rpx;
+  white-space: nowrap;
+}

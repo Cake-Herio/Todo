@@ -1,5 +1,7 @@
 {
   "usingComponents": {
-    "font-page-meta": "/components/font-page-meta/font-page-meta"
+    "font-page-meta": "/components/font-page-meta/font-page-meta",
+    "owner-filter-bar": "/components/owner-filter-bar/owner-filter-bar",
+    "plan-tag-pill": "/components/plan-tag-pill/plan-tag-pill"
   }
 }

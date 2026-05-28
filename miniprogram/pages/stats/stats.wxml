@@ -1,82 +1,153 @@
 <font-page-meta id="font-page-meta" />
-<scroll-view class="scroll-page stats-scroll" style="{{pageFontStyle}}" scroll-y type="list">
-  <view class="page stats-page" style="padding-top: {{safeTopPx}}px;">
-    <view class="page-top-header">
-      <view class="page-top-title">{{rangeLabel}}统计</view>
-      <view class="muted">按标签、成员和时间范围查看</view>
-    </view>
+<view class="stats-page-shell" style="{{pageFontStyle}}">
+  <scroll-view class="scroll-page stats-scroll" scroll-y type="list">
+    <view class="page stats-page" style="padding-top: {{safeTopPx}}px;">
+      <view class="page-top-header">
+        <view class="page-top-title">{{rangeLabel}}统计</view>
+        <view class="muted">按标签、成员和时间范围查看</view>
+      </view>
 
-    <view class="stats-range-switch-wrap">
-      <view class="stats-range-switch">
-        <view class="stats-range-switch-thumb" style="transform: translateX({{rangeIndex * 100}}%);"></view>
-        <view
-          wx:for="{{rangeOptions}}"
-          wx:key="key"
-          class="stats-range-switch-item {{statsRange === item.key ? 'active' : ''}}"
-          data-range="{{item.key}}"
-          bindtap="switchStatsRange"
-        >
-          {{item.label}}
+      <view class="stats-range-switch-wrap">
+        <view class="stats-range-switch">
+          <view class="stats-range-switch-thumb" style="transform: translateX({{rangeIndex * 100}}%);"></view>
+          <view
+            wx:for="{{rangeOptions}}"
+            wx:key="key"
+            class="stats-range-switch-item {{statsRange === item.key ? 'active' : ''}}"
+            data-range="{{item.key}}"
+            bindtap="switchStatsRange"
+          >
+            {{item.label}}
+          </view>
         </view>
       </view>
-    </view>
 
-    <view class="stats-period-nav">
-      <button class="period-button prev" data-offset="-1" bindtap="changePeriod">‹</button>
-      <view class="period-main" bindtap="goToCurrentPeriod">
-        <view class="period-title">{{periodTitle}}</view>
-        <view class="muted period-hint">{{periodHint}}</view>
+      <view class="stats-period-nav">
+        <button class="period-button prev" data-offset="-1" bindtap="changePeriod">‹</button>
+        <view class="period-main" bindtap="goToCurrentPeriod">
+          <view class="period-title">{{periodTitle}}</view>
+          <view class="muted period-hint">{{periodHint}}</view>
+        </view>
+        <button class="period-button next {{canGoNextPeriod ? '' : 'disabled'}}" data-offset="1" bindtap="changePeriod">›</button>
       </view>
-      <button class="period-button next {{canGoNextPeriod ? '' : 'disabled'}}" data-offset="1" bindtap="changePeriod">›</button>
-    </view>
 
-    <view class="stats-grid">
-      <view wx:for="{{cards}}" wx:key="label" class="stats-card card">
-        <view class="stats-value">{{item.value}}</view>
-        <view class="muted">{{item.label}}</view>
-      </view>
-    </view>
-
-    <view class="section-title">标签时长</view>
-    <view class="tag-list card">
-      <block wx:if="{{hasTagStats}}">
-        <view wx:for="{{tagStats}}" wx:key="tag" class="tag-stat">
-          <view class="tag-row">
-            <view class="tag-name-wrap">
-              <text class="legend-dot" style="background: {{item.color}};"></text>
-              <text class="tag-name">{{item.tag}}</text>
+      <view class="stats-tag-filter">
+        <view class="stats-tag-filter-bar">
+          <view class="stats-tag-filter-btn" bindtap="openTagFilterSheet">
+            <text class="stats-tag-filter-btn-text">筛选标签</text>
+            <text class="stats-tag-filter-chevron">▾</text>
+          </view>
+          <view class="stats-tag-filter-echo-wrap">
+            <view class="tag-scroll-wrap stats-tag-echo-scroll-wrap">
+              <view class="tag-scroll-fade tag-scroll-fade-left stats-tag-echo-fade-left {{showTagEchoFadeLeft ? 'is-visible' : ''}}"></view>
+              <scroll-view
+                class="tag-scroll stats-tag-echo-scroll"
+                scroll-x
+                enhanced
+                show-scrollbar="{{false}}"
+                enable-flex
+                bindscroll="onTagEchoScroll"
+              >
+                <view class="tag-scroll-list stats-tag-echo-list">
+                  <block wx:if="{{selectedTagEcho.length}}">
+                    <view
+                      wx:for="{{selectedTagEcho}}"
+                      wx:key="tag"
+                      class="stats-tag-echo-chip"
+                      style="color: {{item.color}};"
+                    >
+                      {{item.tag}}
+                    </view>
+                  </block>
+                  <text wx:else class="stats-tag-echo-placeholder muted">{{tagFilterEchoText}}</text>
+                </view>
+              </scroll-view>
+              <view class="tag-scroll-fade tag-scroll-fade-right stats-tag-echo-fade-right {{showTagEchoFadeRight ? 'is-visible' : ''}}"></view>
             </view>
-            <text class="tag-time">{{item.time}}</text>
           </view>
-          <view class="bar">
-            <view class="bar-fill" style="width: {{item.percent}}%; background: {{item.color}};"></view>
-          </view>
-        </view>
-      </block>
-      <view wx:else class="stats-empty muted">当前时间范围内还没有计时专注记录</view>
-    </view>
-
-    <view class="section-title">标签占比</view>
-    <view class="pie-card card">
-      <view class="pie-chart" style="{{tagPieStyle}}">
-        <view class="pie-center">
-          <view class="pie-value">{{totalFocus}}</view>
-          <view class="muted">总专注</view>
         </view>
       </view>
 
-      <view class="pie-legend">
+      <view class="stats-grid">
+        <view wx:for="{{cards}}" wx:key="label" class="stats-metric-card">
+          <view class="stats-metric-icon-wrap">
+            <image class="stats-metric-icon" src="{{item.icon}}" mode="aspectFit"></image>
+          </view>
+          <view class="stats-metric-value">{{item.value}}</view>
+          <view class="stats-metric-label">{{item.label}}</view>
+        </view>
+      </view>
+
+      <view class="section-title">标签时长</view>
+      <view class="tag-list card {{hasTagStats && statsSectionsVisible ? 'stats-block-animate' : ''}}">
         <block wx:if="{{hasTagStats}}">
-          <view wx:for="{{tagPieLegend}}" wx:key="tag" class="legend-item">
-            <view class="legend-main">
-              <text class="legend-dot" style="background: {{item.color}};"></text>
-              <text class="legend-name">{{item.tag}}</text>
+          <view wx:for="{{displayTagStats}}" wx:key="tag" class="tag-stat">
+            <view class="tag-row">
+              <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" />
+              <text class="tag-time">{{item.animTime}}</text>
             </view>
-            <view class="legend-meta">{{item.share}} · {{item.time}}</view>
+            <view class="bar">
+              <view class="bar-fill" style="width: {{item.animPercent}}%; background: {{item.color}};"></view>
+            </view>
           </view>
         </block>
-        <view wx:else class="stats-empty muted">完成计时后这里会显示标签占比</view>
+        <view wx:else class="stats-empty muted">{{tagEmptyText}}</view>
+      </view>
+
+      <view class="section-title">标签占比</view>
+      <view class="pie-card card {{hasTagStats && statsSectionsVisible ? 'stats-block-animate' : ''}}">
+        <view class="pie-chart" style="{{displayTagPieStyle}}">
+          <view class="pie-center">
+            <view class="pie-value">{{displayTotalFocus}}</view>
+            <view class="muted">总专注</view>
+          </view>
+        </view>
+
+        <view class="pie-legend">
+          <block wx:if="{{hasTagStats}}">
+            <view wx:for="{{displayTagPieLegend}}" wx:key="tag" class="legend-item">
+              <view class="legend-main">
+                <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" />
+              </view>
+              <view class="legend-meta">{{item.animShare}} · {{item.animTime}}</view>
+            </view>
+          </block>
+          <view wx:else class="stats-empty muted">{{tagPieEmptyText}}</view>
+        </view>
       </view>
     </view>
+  </scroll-view>
+
+  <view
+    wx:if="{{isTagFilterSheetVisible}}"
+    class="tag-filter-mask mask-fade {{isTagFilterSheetClosing ? 'is-closing' : ''}}"
+    style="{{pageFontStyle}}"
+    catchtap="closeTagFilterSheet"
+    catchtouchmove="noop"
+  >
+    <view class="tag-filter-panel panel-pop {{isTagFilterSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
+      <view class="tag-filter-panel-header">
+        <view class="tag-filter-panel-title">筛选标签</view>
+        <text class="tag-filter-sheet-toggle" catchtap="toggleSelectAllTags">{{tagFilterToggleLabel}}</text>
+      </view>
+
+      <scroll-view class="tag-filter-panel-list" scroll-y enhanced show-scrollbar="{{false}}">
+        <view wx:if="{{tagFilterItems.length}}" class="tag-filter-grid">
+          <view
+            wx:for="{{tagFilterItems}}"
+            wx:key="tag"
+            class="tag-filter-item {{item.checked ? 'checked' : ''}}"
+            catchtap="toggleTagFilter"
+            data-tag="{{item.tag}}"
+          >
+            <view class="tag-filter-item-chip" style="background: {{item.color}};">{{item.tag}}</view>
+            <view class="tag-filter-item-check {{item.checked ? 'is-checked' : ''}}">
+              <text wx:if="{{item.checked}}" class="tag-filter-item-check-icon">✓</text>
+            </view>
+          </view>
+        </view>
+        <view wx:else class="stats-empty muted tag-filter-sheet-empty">当前周期暂无可筛选标签</view>
+      </scroll-view>
+    </view>
   </view>
-</scroll-view>
+</view>

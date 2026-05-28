@@ -1,10 +1,11 @@
-import { addPlan, formatDate, getOwnerAvatarUrl, getPlansByDate, getToday, type OwnerKey, type Plan } from '../../utils/data'
-import { refreshWithLocalFirst, syncFromCloud } from '../../utils/cloud-sync'
-import { getDisplayAvatarUrl, getDisplayNickname, getSession, isProfileComplete, isSharedSpaceMode, saveUserProfile } from '../../utils/session'
-import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
+import { getFallbackAvatarUrl, resolvePartnerAvatarForDisplay, toDisplayAvatarUrl } from '../../utils/avatar-display'
+import { addPlan, findTimedScheduleBatchConflictMessage, formatDate, getOwnerAvatarUrl, getPlansByDate, getToday, type OwnerKey, type Plan } from '../../utils/data'
+import { refreshWithLocalFirst, bootstrapSharedSpace } from '../../utils/cloud-sync'
+import { getDisplayAvatarUrl, getDisplayNickname, getPartnerDisplayAvatarUrl, getPartnerDisplayNickname, getSession, isProfileComplete, isSharedSpaceMode, saveUserProfile, tryRestoreSessionFromCloud } from '../../utils/session'
+import { getOwnerFilterStateLocal } from '../../utils/owner-filters'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
-import { fetchPartnerFocusPresence } from '../../utils/focus-presence'
+import { fetchOwnFocusPresence, fetchPartnerFocusPresence } from '../../utils/focus-presence'
 import { parsePlanTextWithDeepSeek, refinePlanDraftsWithDeepSeek, type AiPlanDraft, type AiDraftRefineSnapshot } from '../../utils/deepseek'
 import { addPlanTagOption, DEFAULT_PLAN_TAGS, getPlanTagNames, getPlanTagOptions, resolvePlanTag } from '../../utils/plan-tags'
 import { getScrollFadeState } from '../../utils/scroll-fade'
@@ -67,6 +68,8 @@ const getStatusClass = (statusLabel: string): 'soon' | 'wait' =>
   statusLabel === '即将开始' || statusLabel === '即将结束' ? 'soon' : 'wait'
 
 const UPCOMING_WINDOW_MINUTES = 120
+/** 主页专注状态轮询间隔（自己 + 对方） */
+const FOCUS_PRESENCE_POLL_MS = 60 * 1000
 
 const parseTimeToMinutes = (time: string, treatMidnightAsEnd = false) => {
   const [hourText, minuteText] = time.split(':')
@@ -250,6 +253,26 @@ const mergeRefinedEntries = (previousEntries: AiDraftEntry[], plans: AiPlanDraft
     plan,
   }))
 
+const buildAiDraftScheduleInputs = (entries: AiDraftEntry[]) =>
+  entries.flatMap(({ ownerKey, plan }) => {
+    const startTime = plan.startTime?.trim()
+    const endTime = plan.endTime?.trim()
+
+    if (!startTime || !endTime) {
+      return []
+    }
+
+    return [
+      {
+        ownerKey,
+        date: plan.date || resolveRelativeDate(plan.timeText),
+        startTime,
+        endTime,
+        label: resolvePlanTag(plan.defaultTag || plan.section),
+      },
+    ]
+  })
+
 const saveAiPlanDrafts = (entries: AiDraftEntry[]) => {
   let savedCount = 0
 
@@ -299,14 +322,22 @@ Component({
     isProfileSaving: false,
     heroTreeSrc: '/images/home/hero-tree.png',
     singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
+    partnerNickname: getPartnerDisplayNickname(),
+    partnerAvatarUrl: getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner'),
     partnerFocusVisible: false,
+    selfFocusVisible: false,
     nextPlans: [] as UpcomingPreviewPlan[],
     partner: {
       name: '对方',
       status: '专注',
-      focus: '',
       duration: '',
       avatarUrl: getOwnerAvatarUrl('partner'),
+    },
+    selfFocus: {
+      name: '我',
+      status: '专注',
+      duration: '',
+      avatarUrl: getOwnerAvatarUrl('me'),
     },
     isRecording: false,
     isVoiceMaskVisible: false,
@@ -362,7 +393,7 @@ Component({
   },
   lifetimes: {
     attached() {
-      this.refreshHomeData()
+      void this.bootstrapHomeSession()
       this.syncHomeChrome()
       this.setupSpeechRecognition()
     },
@@ -373,17 +404,38 @@ Component({
   pageLifetimes: {
     show() {
       refreshPageFontStyle(this)
-      refreshWithLocalFirst(() => this.refreshHomeData())
-      this.syncHomeChrome()
-      if (!this.data.needProfileLogin) {
-        this.startPartnerFocusPolling()
-      }
+      void this.bootstrapHomeSession()
     },
     hide() {
       this.stopPartnerFocusPolling()
     },
   },
   methods: {
+    async bootstrapHomeSession() {
+      if (!isProfileComplete()) {
+        await tryRestoreSessionFromCloud()
+      }
+
+      refreshWithLocalFirst(() => {
+        this.refreshHomeData()
+        this.syncHomeChrome()
+
+        if (isProfileComplete() && !this.data.homeContentVisible) {
+          this.revealHomeContent()
+        }
+
+        if (isProfileComplete()) {
+          this.startPartnerFocusPolling()
+        }
+      })
+
+      if (isProfileComplete()) {
+        void bootstrapSharedSpace().then(async () => {
+          await this.prefetchPartnerAvatar()
+          void this.refreshFocusPresence()
+        })
+      }
+    },
     getVoiceLiveText() {
       return this.selectComponent('#voice-live-text') as VoiceLiveTextComponent | null
     },
@@ -447,6 +499,8 @@ Component({
         avatarUrl: getDisplayAvatarUrl(),
         needProfileLogin,
         singleUserMode: getOwnerFilterStateLocal(this.data.activeFilter || 'all').singleUserMode,
+        partnerNickname: getPartnerDisplayNickname(),
+        partnerAvatarUrl: getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner'),
         loginAvatarUrl: this.data.loginAvatarUrl || session?.avatarUrl || '',
         loginNickname: this.data.loginNickname || (session?.nickname !== '我' ? session?.nickname || '' : ''),
         nextPlans: pickUpcomingPlans(activePlans),
@@ -470,7 +524,7 @@ Component({
       this.syncHomeChrome()
 
       if (!needProfileLogin) {
-        void this.refreshPartnerFocus()
+        void this.refreshFocusPresence()
       }
     },
     syncHomeChrome() {
@@ -498,8 +552,8 @@ Component({
     startPartnerFocusPolling() {
       this.stopPartnerFocusPolling()
       ;(this as WechatMiniprogram.IAnyObject)._partnerFocusPollTimer = setInterval(() => {
-        void this.refreshPartnerFocus()
-      }, 10000) as unknown as number
+        void this.refreshFocusPresence()
+      }, FOCUS_PRESENCE_POLL_MS) as unknown as number
     },
     stopPartnerFocusPolling() {
       const timer = (this as WechatMiniprogram.IAnyObject)._partnerFocusPollTimer as number | undefined
@@ -510,37 +564,97 @@ Component({
       clearInterval(timer)
       ;(this as WechatMiniprogram.IAnyObject)._partnerFocusPollTimer = 0
     },
-    async refreshPartnerFocus() {
-      const state = await getOwnerFilterState('all')
+    async prefetchPartnerAvatar() {
+      const displayUrl = await resolvePartnerAvatarForDisplay()
+
+      const updates: WechatMiniprogram.Component.DataOption = {}
+      if (displayUrl !== this.data.partnerAvatarUrl) {
+        updates.partnerAvatarUrl = displayUrl
+      }
+
+      if (this.data.partner.avatarUrl !== displayUrl) {
+        updates.partner = {
+          ...this.data.partner,
+          avatarUrl: displayUrl,
+        }
+      }
+
+      if (Object.keys(updates).length) {
+        this.setData(updates)
+      }
+    },
+    async refreshFocusPresence() {
+      const state = getOwnerFilterStateLocal('all')
       const session = getSession()
-      const partnerAvatar = session?.partnerAvatarUrl || getOwnerAvatarUrl('partner')
+      const partnerAvatarFallback = getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner')
+      const selfAvatarFallback = toDisplayAvatarUrl(session?.avatarUrl || '', getFallbackAvatarUrl('me'))
 
-      this.setData({
-        singleUserMode: state.singleUserMode,
-      })
+      const updates: WechatMiniprogram.Component.DataOption = {}
 
-      if (state.singleUserMode) {
-        if (this.data.partnerFocusVisible) {
-          this.setData({ partnerFocusVisible: false })
-        }
-        return
+      if (state.singleUserMode !== this.data.singleUserMode) {
+        updates.singleUserMode = state.singleUserMode
       }
 
-      try {
-        const partner = await fetchPartnerFocusPresence()
-        this.setData({
-          partnerFocusVisible: Boolean(partner),
-          partner: partner || {
-            ...this.data.partner,
-            avatarUrl: partnerAvatar,
-          },
-        })
-      } catch (error) {
-        console.warn('[focus-presence] fetch partner failed', error)
-        if (this.data.partnerFocusVisible) {
-          this.setData({ partnerFocusVisible: false })
+      let partner = null
+      let self = null
+
+      if (isSharedSpaceMode()) {
+        try {
+          partner = await fetchPartnerFocusPresence()
+        } catch (error) {
+          console.warn('[focus-presence] fetch partner failed', error)
+        }
+
+        try {
+          self = await fetchOwnFocusPresence()
+        } catch (error) {
+          console.warn('[focus-presence] fetch self failed', error)
         }
       }
+
+      const partnerVisible = Boolean(partner)
+      if (partnerVisible !== this.data.partnerFocusVisible) {
+        updates.partnerFocusVisible = partnerVisible
+      }
+
+      const selfVisible = Boolean(self)
+      if (selfVisible !== this.data.selfFocusVisible) {
+        updates.selfFocusVisible = selfVisible
+      }
+
+      const nextPartner = partner || {
+        ...this.data.partner,
+        avatarUrl: partnerAvatarFallback,
+      }
+      const prevPartner = this.data.partner
+      if (
+        nextPartner.name !== prevPartner.name ||
+        nextPartner.status !== prevPartner.status ||
+        nextPartner.duration !== prevPartner.duration ||
+        nextPartner.avatarUrl !== prevPartner.avatarUrl
+      ) {
+        updates.partner = nextPartner
+      }
+
+      const nextSelf = self || {
+        ...this.data.selfFocus,
+        avatarUrl: selfAvatarFallback,
+      }
+      const prevSelf = this.data.selfFocus
+      if (
+        nextSelf.name !== prevSelf.name ||
+        nextSelf.status !== prevSelf.status ||
+        nextSelf.duration !== prevSelf.duration ||
+        nextSelf.avatarUrl !== prevSelf.avatarUrl
+      ) {
+        updates.selfFocus = nextSelf
+      }
+
+      if (Object.keys(updates).length) {
+        this.setData(updates)
+      }
+
+      void this.prefetchPartnerAvatar()
     },
     onHeroGreetingTap() {
       if (!this.data.needProfileLogin) {
@@ -602,7 +716,7 @@ Component({
         })
 
         if (isSharedSpaceMode()) {
-          await syncFromCloud()
+          await bootstrapSharedSpace()
           getApp<IAppOption>().globalData.cloudReady = true
         }
         dismissModal(this, 'isLoginSheetVisible', 'isLoginSheetClosing', {
@@ -860,7 +974,24 @@ Component({
         return
       }
 
-      saveAiPlanDrafts(this.data.aiDraftEntries)
+      const scheduleConflict = findTimedScheduleBatchConflictMessage(
+        buildAiDraftScheduleInputs(this.data.aiDraftEntries),
+      )
+
+      if (scheduleConflict) {
+        wx.showToast({
+          title: scheduleConflict,
+          icon: 'none',
+        })
+        return
+      }
+
+      const savedCount = saveAiPlanDrafts(this.data.aiDraftEntries)
+
+      if (savedCount === 0) {
+        return
+      }
+
       this.closeAiDraft()
       this.refreshHomeData()
       wx.showToast({
@@ -1035,8 +1166,11 @@ Component({
       })
     },
     chooseEditPlanTag(e: WechatMiniprogram.BaseEvent) {
+      const tag = e.currentTarget.dataset.tag as string
+      const tagId = e.currentTarget.dataset.tagId as string
       this.setData({
-        'editPlanForm.tag': e.currentTarget.dataset.tag,
+        'editPlanForm.tag': tag,
+        'editPlanForm.tagId': tagId,
       })
     },
     updatePlanTagScrollFades(scrollLeft = 0) {
@@ -1076,9 +1210,9 @@ Component({
         isTagCreateVisible: false,
       })
     },
-    onTagCreateConfirm(e: WechatMiniprogram.CustomEvent<{ name: string; color: string }>) {
+    async onTagCreateConfirm(e: WechatMiniprogram.CustomEvent<{ name: string; color: string }>) {
       const { name, color } = e.detail
-      const result = addPlanTagOption(name, color)
+      const result = await addPlanTagOption(name, color, 'private')
 
       if (!result.ok) {
         wx.showToast({
@@ -1092,6 +1226,7 @@ Component({
         isTagCreateVisible: false,
         quickTags: getPlanTagOptions(),
         'editPlanForm.tag': name.trim(),
+        'editPlanForm.tagId': result.tagId || '',
       })
       wx.showToast({
         title: '已添加主题',
@@ -1141,8 +1276,12 @@ Component({
       })
     },
     goFocus() {
+      const url = this.data.selfFocusVisible ? '/pages/focus/focus?resume=1' : '/pages/focus/focus'
+      wx.navigateTo({ url })
+    },
+    goFocusResume() {
       wx.navigateTo({
-        url: '/pages/focus/focus',
+        url: '/pages/focus/focus?resume=1',
       })
     },
     noop() {

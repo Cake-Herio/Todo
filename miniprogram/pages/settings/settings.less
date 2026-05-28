@@ -67,19 +67,6 @@
   font-weight: 800;
 }
 
-.item-label-danger {
-  color: #d86868;
-}
-
-.settings-logout {
-  margin-top: 26rpx;
-  padding: 4rpx 24rpx;
-}
-
-.settings-item-logout:active {
-  opacity: 0.72;
-}
-
 .arrow {
   color: #9ba69e;
   font-size: 48rpx;
@@ -182,5 +169,304 @@
   color: #7FB592;
   font-size: 34rpx;
   font-weight: 800;
+}
+
+.activitysmith-sheet-body {
+  padding: 8rpx 0 12rpx;
+}
+
+.activitysmith-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin: 0 8rpx 20rpx;
+  padding: 24rpx 20rpx;
+  border-radius: 22rpx;
+  background: #f6f7f1;
+}
+
+.activitysmith-toggle-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.activitysmith-switch {
+  flex: 0 0 auto;
+  transform: scale(0.92);
+  transform-origin: center right;
+}
+
+.activitysmith-key-section {
+  padding: 0 8rpx 20rpx;
+}
+
+.activitysmith-key-hint {
+  margin-top: 8rpx;
+}
+
+.activitysmith-key-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.activitysmith-key-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 88rpx;
+  padding: 0 24rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  border: 1rpx solid #dde4dc;
+  font-size: 26rpx;
+  color: #2f3a34;
+}
+
+.activitysmith-key-masked {
+  margin-top: 12rpx;
+  color: #7a857d;
+  font-size: 24rpx;
+}
+
+.activitysmith-save-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20rpx;
+  height: 88rpx;
+  border-radius: 18rpx;
+  background: #7fb592;
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.activitysmith-save-btn:active {
+  opacity: 0.88;
+}
+
+.activitysmith-steps {
+  margin-top: 20rpx;
+  padding: 0 8rpx;
+}
+
+.activitysmith-step {
+  color: #7a857d;
+  font-size: 24rpx;
+  line-height: 1.7;
+}
+
+.activitysmith-step-link:active {
+  opacity: 0.72;
+}
+
+.activitysmith-link {
+  color: #7fb592;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.activitysmith-step + .activitysmith-step {
+  margin-top: 12rpx;
+}
+
+.shared-space-sheet-body {
+  padding: 8rpx 8rpx 24rpx;
+}
+
+.shared-space-room-section {
+  margin-bottom: 24rpx;
+}
+
+.shared-space-room-group + .shared-space-room-group {
+  margin-top: 20rpx;
+}
+
+.shared-space-room-group-title {
+  color: #7a857d;
+  font-size: 24rpx;
+  margin-bottom: 12rpx;
+}
+
+.shared-space-room-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  border: 1rpx solid #e6ece7;
+}
+
+.shared-space-room-item + .shared-space-room-item {
+  margin-top: 12rpx;
+}
+
+.shared-space-room-item.is-active {
+  border-color: #7fb592;
+  background: #f4faf6;
+}
+
+.shared-space-room-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.shared-space-room-name {
+  color: #2f3a34;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.shared-space-room-badge {
+  color: #7fb592;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.shared-space-room-side {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex: 0 0 auto;
+}
+
+.shared-space-room-icon-btn {
+  flex: 0 0 auto;
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shared-space-room-icon-btn:active {
+  opacity: 0.72;
+}
+
+.shared-space-room-icon {
+  width: 28rpx;
+  height: 28rpx;
+}
+
+.shared-space-room-action {
+  color: #7a857d;
+  font-size: 24rpx;
+}
+
+.shared-space-empty {
+  margin-bottom: 24rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.shared-space-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.shared-space-actions-stack {
+  flex-direction: column;
+}
+
+.shared-space-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  border-radius: 18rpx;
+  background: #eef3ee;
+  color: #2f3a34;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.shared-space-action-btn-primary {
+  background: #7fb592;
+  color: #fff;
+}
+
+.shared-space-action-btn:active {
+  opacity: 0.88;
+}
+
+.shared-space-create-result,
+.shared-space-join-panel {
+  padding: 8rpx 8rpx 0;
+}
+
+.shared-space-create-hint {
+  margin-top: 8rpx;
+  margin-bottom: 24rpx;
+}
+
+.shared-space-code-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 24rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  border: 1rpx solid #dde4dc;
+  margin-bottom: 24rpx;
+}
+
+.shared-space-code-text {
+  flex: 1;
+  min-width: 0;
+  color: #2f3a34;
+  font-size: 40rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+}
+
+.shared-space-copy-btn {
+  flex: 0 0 auto;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+  background: #eef3ee;
+}
+
+.shared-space-copy-btn:active {
+  opacity: 0.88;
+}
+
+.shared-space-copy-icon {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.shared-space-join-input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.shared-space-join-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.shared-space-join-confirm {
+  flex: 0 0 auto;
+  min-width: 120rpx;
+  padding: 0 28rpx;
+}
+
+.shared-space-done-btn {
+  width: 100%;
 }
 

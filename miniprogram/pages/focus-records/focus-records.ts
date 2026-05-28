@@ -1,0 +1,225 @@
+import {
+  formatFocusMinutes,
+  formatRecordDateLabel,
+  formatTimedRecordTimeRange,
+  getMyTimedRecords,
+  getMyTimedRecordsSummary,
+  getToday,
+  type CompletedRecord,
+} from '../../utils/data'
+import { refreshWithLocalFirst } from '../../utils/cloud-sync'
+import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
+import { dismissModal, openModal } from '../../utils/modal-dismiss'
+import {
+  buildDayOptions,
+  clampPickerYear,
+  formatDateParts,
+  parseDateParts,
+  PICKER_MONTHS,
+  PICKER_YEARS,
+} from '../../utils/plan-edit-form'
+
+interface FocusRecordView {
+  id: string
+  tag: string
+  detail: string
+  durationText: string
+  timeRange: string
+  dateLabel: string
+  showDateLabel: boolean
+}
+
+const PAGE_SIZE = 15
+const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+
+const formatDateTitle = (dateText: string) => {
+  const date = new Date(`${dateText}T00:00:00`)
+  const today = getToday()
+
+  if (dateText === today) {
+    return '今天'
+  }
+
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${weekDays[date.getDay()]}`
+}
+
+const shiftDate = (dateText: string, offset: number) => {
+  const date = new Date(`${dateText}T00:00:00`)
+  date.setDate(date.getDate() + offset)
+  return formatDateParts(date.getFullYear(), date.getMonth() + 1, date.getDate())
+}
+
+const toRecordView = (record: CompletedRecord, showDateLabel: boolean): FocusRecordView => ({
+  id: record.id,
+  tag: record.tag,
+  detail: record.detail,
+  durationText: formatFocusMinutes(record.actualMinutes || 0),
+  timeRange: formatTimedRecordTimeRange(record),
+  dateLabel: formatRecordDateLabel(record.completedAt),
+  showDateLabel,
+})
+
+const buildEmptyText = (showAll: boolean, selectedDate: string) => {
+  if (showAll) {
+    return '还没有计时记录，去首页开始计时吧'
+  }
+
+  if (selectedDate === getToday()) {
+    return '今天还没有计时记录'
+  }
+
+  return '这一天还没有计时记录'
+}
+
+Component({
+  data: {
+    showAll: false,
+    selectedDate: getToday(),
+    dateTitle: formatDateTitle(getToday()),
+    periodHint: '点击日期可选择',
+    canGoNextDate: false,
+    summaryText: '',
+    records: [] as FocusRecordView[],
+    emptyText: buildEmptyText(false, getToday()),
+    hasMore: false,
+    loadMoreText: '',
+    isPickerSheetVisible: false,
+    isPickerSheetClosing: false,
+    pickerTempValue: [0, 0, 0],
+    pickerDayOptions: buildDayOptions(new Date().getFullYear(), new Date().getMonth() + 1),
+    pickerYears: PICKER_YEARS,
+    pickerMonths: PICKER_MONTHS,
+    pageFontStyle: getFontPageStyle(),
+  },
+  lifetimes: {
+    attached() {
+      this.reloadRecords(true)
+    },
+  },
+  pageLifetimes: {
+    show() {
+      refreshPageFontStyle(this)
+      refreshWithLocalFirst(() => {
+        this.reloadRecords(true)
+      })
+    },
+  },
+  methods: {
+    reloadRecords(resetPage = false) {
+      const { showAll, selectedDate } = this.data
+      const filterDate = showAll ? null : selectedDate
+      const allRecords = getMyTimedRecords(filterDate)
+      const summary = getMyTimedRecordsSummary(filterDate)
+      const visibleCount = resetPage
+        ? PAGE_SIZE
+        : Math.min(allRecords.length, this.data.records.length + PAGE_SIZE)
+      const visibleRecords = allRecords.slice(0, visibleCount).map((record) => toRecordView(record, showAll))
+      const hasMore = visibleCount < allRecords.length
+
+      this.setData({
+        dateTitle: showAll ? '全部记录' : formatDateTitle(selectedDate),
+        periodHint: showAll ? '按日期筛选专注历史' : '点击日期可选择',
+        canGoNextDate: !showAll && selectedDate < getToday(),
+        summaryText: `${summary.count} 条 · 合计 ${summary.totalDurationText}`,
+        records: visibleRecords,
+        emptyText: buildEmptyText(showAll, selectedDate),
+        hasMore,
+        loadMoreText: hasMore ? '上拉加载更多' : allRecords.length > 0 ? '没有更多了' : '',
+      })
+    },
+    showAllRecords() {
+      if (this.data.showAll) {
+        return
+      }
+
+      this.setData({ showAll: true })
+      this.reloadRecords(true)
+    },
+    showDateRecords() {
+      if (!this.data.showAll) {
+        return
+      }
+
+      this.setData({
+        showAll: false,
+        selectedDate: getToday(),
+      })
+      this.reloadRecords(true)
+    },
+    changeDate(e: WechatMiniprogram.BaseEvent) {
+      if (this.data.showAll) {
+        return
+      }
+
+      const offset = Number(e.currentTarget.dataset.offset)
+      const nextDate = shiftDate(this.data.selectedDate, offset)
+
+      if (offset > 0 && nextDate > getToday()) {
+        return
+      }
+
+      this.setData({ selectedDate: nextDate })
+      this.reloadRecords(true)
+    },
+    openDatePicker() {
+      if (this.data.showAll) {
+        return
+      }
+
+      const parts = parseDateParts(this.data.selectedDate)
+      const year = clampPickerYear(parts.year)
+      const dayOptions = buildDayOptions(year, parts.month)
+
+      openModal(this, 'isPickerSheetVisible', 'isPickerSheetClosing', {
+        pickerDayOptions: dayOptions,
+        pickerTempValue: [
+          year - PICKER_YEARS[0],
+          parts.month - 1,
+          Math.min(parts.day, dayOptions.length) - 1,
+        ],
+      })
+    },
+    closePickerSheet() {
+      dismissModal(this, 'isPickerSheetVisible', 'isPickerSheetClosing')
+    },
+    onPickerSheetChange(e: WechatMiniprogram.PickerViewChange) {
+      const nextValue = e.detail.value as number[]
+      const year = PICKER_YEARS[nextValue[0]] || PICKER_YEARS[0]
+      const month = nextValue[1] + 1
+      const dayOptions = buildDayOptions(year, month)
+      const dayIndex = Math.min(nextValue[2], dayOptions.length - 1)
+
+      this.setData({
+        pickerDayOptions: dayOptions,
+        pickerTempValue: [nextValue[0], nextValue[1], dayIndex],
+      })
+    },
+    confirmPickerSheet() {
+      const [yearIndex, monthIndex, dayIndex] = this.data.pickerTempValue
+      const year = PICKER_YEARS[yearIndex] || PICKER_YEARS[0]
+      const month = monthIndex + 1
+      const day = dayIndex + 1
+      const selectedDate = formatDateParts(year, month, day)
+      const today = getToday()
+      const nextDate = selectedDate > today ? today : selectedDate
+
+      dismissModal(this, 'isPickerSheetVisible', 'isPickerSheetClosing', {
+        extraData: {
+          showAll: false,
+          selectedDate: nextDate,
+        },
+        onDismissed: () => {
+          this.reloadRecords(true)
+        },
+      })
+    },
+    loadMoreRecords() {
+      if (!this.data.hasMore) {
+        return
+      }
+
+      this.reloadRecords(false)
+    },
+    noop() {},
+  },
+})

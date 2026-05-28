@@ -1,6 +1,6 @@
 import type { AiPlanDraft } from './deepseek'
 import { DEFAULT_PLAN_TAGS, type OwnerKey, type Plan } from './data'
-import { resolvePlanTag } from './plan-tags'
+import { resolvePlanTag, resolveTagBinding } from './plan-tags'
 
 export type ScheduleKind = 'timed' | 'period' | 'allday'
 export type PeriodKey = 'morning' | 'afternoon' | 'evening'
@@ -9,6 +9,7 @@ export type PickerSheetKind = 'date' | 'time-start' | 'time-end' | 'period'
 export interface EditPlanForm {
   ownerKey: OwnerKey
   tag: string
+  tagId: string
   remark: string
   date: string
   scheduleKind: ScheduleKind
@@ -109,12 +110,16 @@ export const getPeriodIndex = (periodKey: PeriodKey) =>
 
 export { resolvePlanTag }
 
+const defaultTagBinding = () => resolveTagBinding(DEFAULT_PLAN_TAGS[0])
+
 export const buildEditPlanFormFromPlan = (raw: Plan, fallbackDate: string): EditPlanForm => {
   const periodKey = getPeriodKeyFromTimeText(raw.timeText) || 'morning'
+  const tagBinding = resolveTagBinding(raw.tag, raw.tagId)
 
   return {
     ownerKey: raw.ownerKey,
-    tag: raw.tag,
+    tag: tagBinding.tag,
+    tagId: tagBinding.tagId,
     remark: raw.remark || '',
     date: raw.date || fallbackDate,
     scheduleKind: raw.startTime && raw.endTime ? 'timed' : getPeriodKeyFromTimeText(raw.timeText) ? 'period' : 'allday',
@@ -131,10 +136,12 @@ export const buildEditPlanFormFromDraft = (
   ownerKey: OwnerKey = 'me',
 ): EditPlanForm => {
   const periodKey = getPeriodKeyFromTimeText(draft.timeText) || 'morning'
+  const tagBinding = resolveTagBinding(resolvePlanTag(draft.defaultTag || draft.section))
 
   return {
     ownerKey,
-    tag: resolvePlanTag(draft.defaultTag || draft.section),
+    tag: tagBinding.tag,
+    tagId: tagBinding.tagId,
     remark: draft.remark || '',
     date: draft.date || fallbackDate,
     scheduleKind: getDraftScheduleKind(draft),
@@ -145,17 +152,22 @@ export const buildEditPlanFormFromDraft = (
   }
 }
 
-export const createDefaultEditPlanForm = (date: string): EditPlanForm => ({
-  ownerKey: 'me',
-  tag: DEFAULT_PLAN_TAGS[0],
-  remark: '',
-  date,
-  scheduleKind: 'timed',
-  startTime: '09:00',
-  endTime: '10:00',
-  periodKey: 'morning',
-  periodIndex: 0,
-})
+export const createDefaultEditPlanForm = (date: string): EditPlanForm => {
+  const tagBinding = defaultTagBinding()
+
+  return {
+    ownerKey: 'me',
+    tag: tagBinding.tag,
+    tagId: tagBinding.tagId,
+    remark: '',
+    date,
+    scheduleKind: 'timed',
+    startTime: '09:00',
+    endTime: '10:00',
+    periodKey: 'morning',
+    periodIndex: 0,
+  }
+}
 
 export const applyEditPlanFormToDraft = (draft: AiPlanDraft, form: EditPlanForm): AiPlanDraft => {
   let startTime: string | null = null
@@ -202,10 +214,13 @@ export const buildPlanUpdatePayloadFromForm = (
     timeText = PERIOD_OPTIONS.find((item) => item.key === form.periodKey)?.label || '上午'
   }
 
+  const tagBinding = resolveTagBinding(form.tag, form.tagId)
+
   return {
     ownerKey: form.ownerKey,
-    title: form.tag,
-    tag: form.tag,
+    title: tagBinding.tag,
+    tag: tagBinding.tag,
+    tagId: tagBinding.tagId,
     remark: form.remark.trim(),
     date: form.date,
     startTime,

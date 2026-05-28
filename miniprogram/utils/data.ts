@@ -1,4 +1,5 @@
 import { notifyCloudMutate } from './cloud-bridge'
+import { resolveTagBindingFromList } from './tag-binding'
 import { getSession } from './session'
 
 export type OwnerKey = 'me' | 'partner'
@@ -13,6 +14,7 @@ export interface Plan {
   color: 'green' | 'blue'
   title: string
   tag: string
+  tagId?: string
   remark: string | null
   date: string | null
   startTime: string | null
@@ -31,6 +33,7 @@ export interface CompletedRecord {
   ownerKey: OwnerKey
   title: string
   tag: string
+  tagId?: string
   detail: string
   startedAt: number | null
   completedAt: number
@@ -51,6 +54,11 @@ const AVATARS = {
 }
 export { DEFAULT_PLAN_TAGS } from './plan-tags'
 
+const resolveTagBinding = (tag: string, tagId?: string) => {
+  const { getPlanTagOptions } = require('./plan-tags') as typeof import('./plan-tags')
+  return resolveTagBindingFromList(tag, tagId, getPlanTagOptions())
+}
+
 const formatDateValue = (date: Date) => {
   const year = date.getFullYear()
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
@@ -65,10 +73,18 @@ const createEmptyAppData = (): AppData => ({
 export const getToday = () => formatDateValue(new Date())
 
 export const getOwnerAvatarUrl = (ownerKey: OwnerKey) => {
+  const session = getSession()
+
   if (ownerKey === 'me') {
-    const session = getSession()
     if (session?.profileCompleted && session.avatarUrl) {
       return session.avatarUrl
+    }
+  }
+
+  if (ownerKey === 'partner' && session?.partnerAvatarUrl) {
+    const url = session.partnerAvatarUrl
+    if (!url.startsWith('cloud://')) {
+      return url
     }
   }
 
@@ -89,11 +105,107 @@ const notifyCloudDataChanged = () => {
 
 export const getLocalData = (): AppData => {
   ensureLocalData()
-  return wx.getStorageSync(STORAGE_KEY) as AppData
+  const data = wx.getStorageSync(STORAGE_KEY) as AppData
+  const backfilled = backfillTagIdsInData(data)
+
+  if (backfilled.changed) {
+    wx.setStorageSync(STORAGE_KEY, backfilled.data)
+  }
+
+  return backfilled.data
 }
 
 export const saveLocalData = (data: AppData) => {
   wx.setStorageSync(STORAGE_KEY, data)
+}
+
+const backfillTagIdsInData = (data: AppData) => {
+  let changed = false
+
+  const plans = data.plans.map((plan) => {
+    if (plan.tagId) {
+      return plan
+    }
+
+    const binding = resolveTagBinding(plan.tag)
+    changed = true
+    return { ...plan, tagId: binding.tagId, tag: binding.tag }
+  })
+
+  const completedRecords = data.completedRecords.map((record) => {
+    if (record.tagId) {
+      return record
+    }
+
+    const binding = resolveTagBinding(record.tag)
+    changed = true
+    return { ...record, tagId: binding.tagId, tag: binding.tag }
+  })
+
+  if (!changed) {
+    return { changed: false, data }
+  }
+
+  return {
+    changed: true,
+    data: {
+      ...data,
+      plans,
+      completedRecords,
+    },
+  }
+}
+
+export const applyTagUpdate = (tagId: string, update: { name?: string }) => {
+  if (!update.name) {
+    return
+  }
+
+  const data = getLocalData()
+  let changed = false
+  const nextName = update.name
+
+  const plans = data.plans.map((plan) => {
+    if (plan.tagId !== tagId) {
+      return plan
+    }
+
+    changed = true
+    const title = plan.title === plan.tag ? nextName : plan.title
+
+    return {
+      ...plan,
+      tag: nextName,
+      title,
+      updatedAt: Date.now(),
+    }
+  })
+
+  const completedRecords = data.completedRecords.map((record) => {
+    if (record.tagId !== tagId) {
+      return record
+    }
+
+    changed = true
+    const title = record.title === record.tag ? nextName : record.title
+
+    return {
+      ...record,
+      tag: nextName,
+      title,
+    }
+  })
+
+  if (!changed) {
+    return
+  }
+
+  saveLocalData({
+    ...data,
+    plans,
+    completedRecords,
+  })
+  notifyCloudDataChanged()
 }
 
 export const getPlans = () => getLocalData().plans
@@ -163,6 +275,89 @@ export const findSameOwnerTimedConflict = (input: {
     return timedPlansOverlap(input.startTime, input.endTime, plan.startTime!, plan.endTime!)
   }) || null
 
+export interface TimedScheduleInput {
+  ownerKey: OwnerKey
+  date: string
+  startTime: string
+  endTime: string
+  label?: string
+}
+
+export const findTimedScheduleConflictMessage = (
+  input: TimedScheduleInput,
+  excludePlanId?: string,
+): string | null => {
+  const startTime = input.startTime.trim()
+  const endTime = input.endTime.trim()
+
+  if (!startTime || !endTime) {
+    return null
+  }
+
+  if (parseTimeToMinutes(startTime) >= parseTimeToMinutes(endTime, true)) {
+    return '结束时间需晚于开始时间'
+  }
+
+  const conflict = findSameOwnerTimedConflict({
+    ownerKey: input.ownerKey,
+    date: input.date,
+    startTime,
+    endTime,
+    excludePlanId,
+  })
+
+  if (!conflict) {
+    return null
+  }
+
+  const conflictTime = `${conflict.startTime}-${conflict.endTime}`
+  return `与已有计划「${conflict.tag}」(${conflictTime}) 时段冲突`
+}
+
+export const findTimedScheduleBatchConflictMessage = (items: TimedScheduleInput[]): string | null => {
+  const pendingTimed: TimedScheduleInput[] = []
+
+  for (const item of items) {
+    const startTime = item.startTime.trim()
+    const endTime = item.endTime.trim()
+
+    if (!startTime || !endTime) {
+      continue
+    }
+
+    const label = item.label || '计划'
+    const existingConflict = findTimedScheduleConflictMessage({
+      ...item,
+      startTime,
+      endTime,
+    })
+
+    if (existingConflict) {
+      return `「${label}」${existingConflict}`
+    }
+
+    const batchConflict = pendingTimed.find(
+      (pending) =>
+        pending.ownerKey === item.ownerKey &&
+        pending.date === item.date &&
+        timedPlansOverlap(startTime, endTime, pending.startTime, pending.endTime),
+    )
+
+    if (batchConflict) {
+      const batchLabel = batchConflict.label || '计划'
+      return `「${label}」与「${batchLabel}」时段冲突`
+    }
+
+    pendingTimed.push({
+      ...item,
+      startTime,
+      endTime,
+    })
+  }
+
+  return null
+}
+
 export type AddPlanResult =
   | { ok: true; plan: Plan }
   | { ok: false; message: string }
@@ -171,6 +366,7 @@ export const addPlan = (input: {
   ownerKey: OwnerKey
   title: string
   tag: string
+  tagId?: string
   remark?: string
   date: string
   startTime?: string
@@ -203,14 +399,16 @@ export const addPlan = (input: {
   const data = getLocalData()
   const createdAt = Date.now()
   const isMe = input.ownerKey === 'me'
+  const tagBinding = resolveTagBinding(input.tag, input.tagId)
   const plan: Plan = {
     id: `plan-${createdAt}`,
     ownerKey: input.ownerKey,
     ownerName: isMe ? '我' : 'W',
     ownerAvatar: isMe ? '我' : 'W',
     color: isMe ? 'green' : 'blue',
-    title: input.title || input.tag,
-    tag: input.tag,
+    title: input.title || tagBinding.tag,
+    tag: tagBinding.tag,
+    tagId: tagBinding.tagId,
     remark: input.remark || null,
     date: input.date,
     startTime: hasTimedRange ? startTime : null,
@@ -243,6 +441,7 @@ export const updatePlan = (
     ownerKey: OwnerKey
     title: string
     tag: string
+    tagId?: string
     remark?: string
     date: string
     startTime?: string
@@ -283,14 +482,16 @@ export const updatePlan = (
 
   const isMe = input.ownerKey === 'me'
   const updatedAt = Date.now()
+  const tagBinding = resolveTagBinding(input.tag, input.tagId)
   const plan: Plan = {
     ...target,
     ownerKey: input.ownerKey,
     ownerName: isMe ? '我' : 'W',
     ownerAvatar: isMe ? '我' : 'W',
     color: isMe ? 'green' : 'blue',
-    title: input.title || input.tag,
-    tag: input.tag,
+    title: input.title || tagBinding.tag,
+    tag: tagBinding.tag,
+    tagId: tagBinding.tagId,
     remark: input.remark?.trim() ? input.remark.trim() : null,
     date: input.date,
     startTime: hasTimedRange ? startTime : null,
@@ -324,28 +525,17 @@ export const completePlan = (planId: string) => {
   const data = getLocalData()
   const target = data.plans.find((plan) => plan.id === planId)
 
-  if (!target) {
+  if (!target || target.status === 'completed') {
     return
   }
 
   const completedAt = Date.now()
-  const record: CompletedRecord = {
-    id: `record-${completedAt}`,
-    planId,
-    ownerKey: target.ownerKey,
-    title: target.title,
-    tag: target.tag,
-    detail: target.remark || target.title,
-    startedAt: null,
-    completedAt,
-    completionMode: target.completionMode,
-    actualMinutes: null,
-    wasOverdue: target.status === 'overdue',
-  }
 
   saveLocalData({
-    plans: data.plans.map((plan) => plan.id === planId ? { ...plan, status: 'completed', updatedAt: completedAt } : plan),
-    completedRecords: [record, ...data.completedRecords],
+    ...data,
+    plans: data.plans.map((plan) =>
+      plan.id === planId ? { ...plan, status: 'completed', updatedAt: completedAt } : plan,
+    ),
   })
 
   notifyCloudDataChanged()
@@ -353,6 +543,7 @@ export const completePlan = (planId: string) => {
 
 export const saveTimedCompletion = (input: {
   tag: string
+  tagId?: string
   detail?: string
   actualMinutes: number
   startedAt: number
@@ -365,7 +556,8 @@ export const saveTimedCompletion = (input: {
   const linkedPlan = input.planId ? data.plans.find((plan) => plan.id === input.planId) : null
   const ownerKey = linkedPlan?.ownerKey || input.ownerKey || 'me'
   const planId = linkedPlan?.id || `focus-${completedAt}`
-  const tag = input.tag || linkedPlan?.tag || '专注'
+  const tagBinding = resolveTagBinding(input.tag || linkedPlan?.tag || '专注', input.tagId || linkedPlan?.tagId)
+  const tag = tagBinding.tag
   const title = linkedPlan?.title || tag
   const detail = input.detail?.trim() || linkedPlan?.remark || title
 
@@ -375,6 +567,7 @@ export const saveTimedCompletion = (input: {
     ownerKey,
     title,
     tag,
+    tagId: tagBinding.tagId,
     detail,
     startedAt: input.startedAt,
     completedAt,
@@ -398,6 +591,83 @@ export const saveTimedCompletion = (input: {
   notifyCloudDataChanged()
 
   return record
+}
+
+export const formatFocusMinutes = (minutes: number) => {
+  if (minutes <= 0) {
+    return '0 分钟'
+  }
+
+  if (minutes < 60) {
+    return `${minutes} 分钟`
+  }
+
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+
+  if (rest === 0) {
+    return `${hours} 小时`
+  }
+
+  return `${hours} 小时 ${rest} 分钟`
+}
+
+const padTimePart = (value: number) => `${value}`.padStart(2, '0')
+
+export const formatRecordClock = (timestamp: number, withSeconds = false) => {
+  const date = new Date(timestamp)
+  const hour = padTimePart(date.getHours())
+  const minute = padTimePart(date.getMinutes())
+
+  if (!withSeconds) {
+    return `${hour}:${minute}`
+  }
+
+  return `${hour}:${minute}:${padTimePart(date.getSeconds())}`
+}
+
+export const formatRecordDateLabel = (timestamp: number) => {
+  const date = new Date(timestamp)
+  return `${date.getMonth() + 1}月${date.getDate()}日`
+}
+
+export const formatTimedRecordTimeRange = (record: CompletedRecord) => {
+  const endMs = record.completedAt
+  const durationMs = Math.max((record.actualMinutes || 1) * 60 * 1000, 1000)
+  let startMs = record.startedAt
+
+  if (!startMs || startMs <= 0 || startMs >= endMs) {
+    startMs = endMs - durationMs
+  }
+
+  const useSeconds = formatRecordClock(startMs) === formatRecordClock(endMs)
+  const startLabel = formatRecordClock(startMs, useSeconds)
+  const endLabel = formatRecordClock(endMs, useSeconds)
+
+  return `${startLabel} - ${endLabel}`
+}
+
+export const getMyTimedRecords = (date?: string | null) => {
+  let records = getCompletedRecords().filter(
+    (record) => record.completionMode === 'timed' && record.ownerKey === 'me',
+  )
+
+  if (date) {
+    records = records.filter((record) => formatDate(new Date(record.completedAt)) === date)
+  }
+
+  return records.sort((a, b) => b.completedAt - a.completedAt)
+}
+
+export const getMyTimedRecordsSummary = (date?: string | null) => {
+  const records = getMyTimedRecords(date)
+  const totalMinutes = records.reduce((total, record) => total + (record.actualMinutes || 0), 0)
+
+  return {
+    count: records.length,
+    totalMinutes,
+    totalDurationText: formatFocusMinutes(totalMinutes),
+  }
 }
 
 export const formatDate = formatDateValue

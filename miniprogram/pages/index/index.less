@@ -1089,20 +1089,10 @@ page {
   overflow: hidden;
 }
 
-.ai-draft-tag {
+.ai-draft-meta-row plan-tag-pill {
   flex: 0 0 auto;
   max-width: 120rpx;
-  padding: 10rpx 16rpx;
-  border-radius: 999rpx;
-  background: #E4F2E9;
-  color: #7FB592;
-  font-size: 23rpx;
-  font-weight: 800;
-  line-height: 1.2;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .ai-draft-card-actions {
@@ -1416,10 +1406,13 @@ page {
 }
 
 .plan-owner-chip,
-.plan-tag-chip {
+.plan-tag-option {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
+}
+
+.plan-owner-chip {
   gap: 10rpx;
   min-height: 56rpx;
   padding: 0 20rpx;
@@ -1432,14 +1425,7 @@ page {
   white-space: nowrap;
 }
 
-.plan-tag-dot {
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 50%;
-}
-
-.plan-owner-chip.active,
-.plan-tag-chip.active {
+.plan-owner-chip.active {
   background: #98C6A8;
   color: #fff;
 }

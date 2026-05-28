@@ -2,6 +2,15 @@
   height: 100vh;
 }
 
+.timeline-scroll-wrap {
+  opacity: 0;
+}
+
+.timeline-scroll-wrap.is-visible {
+  opacity: 1;
+  transition: opacity 0.12s ease;
+}
+
 .day-page {
   position: relative;
   padding-bottom: 56rpx;
@@ -312,7 +321,7 @@
   margin-bottom: 6rpx;
   padding: 0 2rpx;
   color: #7FB592;
-  font-size: 15rpx;
+  font-size: 22rpx;
   font-weight: 800;
   line-height: 1.25;
 }
@@ -326,28 +335,26 @@
 }
 
 .schedule-card-avatar {
-  flex: 0 0 22rpx;
-  width: 22rpx;
-  height: 22rpx;
+  flex: 0 0 28rpx;
+  width: 28rpx;
+  height: 28rpx;
   border-radius: 50%;
 }
 
-.schedule-card-tag {
+.schedule-card-meta plan-tag-pill {
   flex: 0 1 auto;
-  max-width: calc(100% - 88rpx);
-  min-height: 28rpx;
-  padding: 0 10rpx;
-  font-size: 17rpx;
-  line-height: 28rpx;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: calc(100% - 96rpx);
+  min-width: 0;
+}
+
+.schedule-card-meta--solo plan-tag-pill {
+  max-width: calc(100% - 40rpx);
 }
 
 .schedule-card-status {
   flex: 0 0 auto;
   color: #9ba69e;
-  font-size: 14rpx;
+  font-size: 20rpx;
   font-weight: 600;
   line-height: 1.2;
 }
@@ -360,10 +367,37 @@
 .schedule-card-remark {
   margin-top: 8rpx;
   padding: 0 2rpx;
-  color: #9ba69e;
-  font-size: 15rpx;
-  line-height: 1.35;
+  color: #7a857d;
+  font-size: 22rpx;
+  line-height: 1.4;
   word-break: break-all;
+}
+
+.timed-card .schedule-card-remark {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  word-break: break-all;
+}
+
+.timed-card-compact .schedule-card {
+  padding: 8rpx 8rpx 6rpx;
+}
+
+.timed-card-compact .schedule-card-time {
+  margin-bottom: 4rpx;
+  font-size: 20rpx;
+}
+
+.timed-card-compact .schedule-card-status {
+  font-size: 18rpx;
+}
+
+.timed-card-compact .schedule-card-remark {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  line-height: 1.3;
 }
 
 .schedule-card-leaf {
@@ -393,20 +427,14 @@
   padding: 12rpx 12rpx 10rpx;
 }
 
-.period-card .schedule-card-tag,
-.allday-card .schedule-card-tag {
-  max-width: calc(100% - 72rpx);
-  font-size: 18rpx;
-}
-
 .period-card .schedule-card-status,
 .allday-card .schedule-card-status {
-  font-size: 16rpx;
+  font-size: 22rpx;
 }
 
 .period-card .schedule-card-remark,
 .allday-card .schedule-card-remark {
-  font-size: 17rpx;
+  font-size: 24rpx;
 }
 
 .period-card .schedule-card-leaf,
@@ -631,14 +659,6 @@
   flex: 0 0 36rpx;
   width: 36rpx;
   height: 36rpx;
-}
-
-.plan-action-preview .schedule-card-tag {
-  max-width: none;
-  min-height: 40rpx;
-  padding: 0 16rpx;
-  font-size: 26rpx;
-  line-height: 40rpx;
 }
 
 .plan-action-preview .schedule-card-status {
@@ -901,10 +921,13 @@
 }
 
 .plan-owner-chip,
-.plan-tag-chip {
+.plan-tag-option {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
+}
+
+.plan-owner-chip {
   gap: 10rpx;
   min-height: 56rpx;
   padding: 0 20rpx;
@@ -917,14 +940,7 @@
   white-space: nowrap;
 }
 
-.plan-tag-dot {
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 50%;
-}
-
-.plan-owner-chip.active,
-.plan-tag-chip.active {
+.plan-owner-chip.active {
   background: #98C6A8;
   color: #fff;
 }

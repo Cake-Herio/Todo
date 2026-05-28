@@ -1,125 +1,74 @@
 <font-page-meta id="font-page-meta" />
+<view class="day-page-shell completed-day-shell" style="{{pageFontStyle}}">
 <template name="completedRecordCard">
   <view class="schedule-card is-timed">
     <view class="schedule-card-inner">
       <view class="schedule-card-time">{{record.time}}</view>
-      <view class="schedule-card-meta">
+      <view class="schedule-card-meta schedule-card-meta--solo">
         <image class="schedule-card-avatar {{record.color}}" src="{{record.ownerAvatarUrl}}" mode="aspectFill"></image>
-        <text class="pill {{record.color === 'blue' ? 'pill-blue' : ''}} schedule-card-tag">{{record.tag}}</text>
-        <text class="schedule-card-status">{{record.status}}</text>
+        <plan-tag-pill name="{{record.tag}}" size="{{record.isCompact ? 'xs-compact' : 'xs'}}" />
       </view>
       <view wx:if="{{record.detail}}" class="schedule-card-remark">{{record.detail}}</view>
     </view>
-    <image class="schedule-card-leaf" src="/images/icons/card-leaf-deco.png" mode="aspectFit"></image>
   </view>
 </template>
 
-<scroll-view class="scroll-page completed-day-scroll" style="{{pageFontStyle}}" scroll-y type="list">
-  <view class="page completed-day-page" style="padding-top: {{safeTopPx}}px;">
+<scroll-view
+  class="scroll-page completed-day-scroll"
+  style="{{pageFontStyle}}"
+  scroll-y
+  type="list"
+  scroll-top="{{scrollWithTop ? scrollTop : ''}}"
+  scroll-with-animation="{{false}}"
+>
+  <view class="page completed-day-page timeline-scroll-wrap {{boardVisible ? 'is-visible' : ''}}" style="padding-top: {{safeTopPx}}px;">
     <view class="page-top-header completed-day-back" bindtap="goBack">
       <view class="page-top-title">{{dateTitle}}</view>
-      <view class="muted">已完成 · 上半天 · 下半天</view>
+      <view class="muted">时间轴</view>
     </view>
 
-    <view class="filter-row">
+    <owner-filter-bar filters="{{filters}}" activeFilter="{{activeFilter}}" bind:change="setFilter" />
+
+    <view class="day-board completed-day-board" style="height: {{boardHeight}}rpx;">
+      <view class="timeline-axis" style="height: {{boardHeight}}rpx;">
+        <view
+          wx:for="{{timelineMarkers}}"
+          wx:key="label"
+          class="timeline-marker"
+          style="top: {{item.top}}rpx;"
+        >
+          <view class="timeline-dot"></view>
+          <text class="timeline-label">{{item.label}}</text>
+        </view>
+        <view class="timeline-line"></view>
+      </view>
+
       <view
-        wx:for="{{filters}}"
-        wx:key="key"
-        class="filter-chip avatar-filter {{activeFilter === item.key ? 'active' : ''}}"
-        data-filter="{{item.key}}"
-        bindtap="setFilter"
+        wx:if="{{nowCursor.visible}}"
+        class="timeline-now"
+        style="top: {{nowCursor.top}}rpx;"
       >
-        <view class="filter-avatars">
-          <image wx:for="{{item.avatars}}" wx:key="key" wx:for-item="avatar" class="filter-avatar {{avatar.key === 'partner' ? 'blue' : 'green'}}" src="{{avatar.url}}" mode="aspectFill"></image>
+        <view class="timeline-now-axis">
+          <view class="timeline-now-dot"></view>
+          <text class="timeline-now-label">{{nowCursor.label}}</text>
         </view>
-        <text class="filter-label">{{item.label}}</text>
-      </view>
-    </view>
-
-    <view class="dual-board">
-      <view class="half-board">
-        <view class="half-header">上半天</view>
-        <view class="half-body" style="height: {{morningBoardHeight}}rpx;">
-          <view class="timeline-axis" style="height: {{morningBoardHeight}}rpx;">
-            <view
-              wx:for="{{morningTimelineMarkers}}"
-              wx:key="label"
-              class="timeline-marker"
-              style="top: {{item.top}}rpx;"
-            >
-              <view class="timeline-dot"></view>
-              <text class="timeline-label">{{item.label}}</text>
-            </view>
-            <view class="timeline-line"></view>
-          </view>
-
-          <view
-            wx:if="{{morningNowCursor.visible}}"
-            class="timeline-now"
-            style="top: {{morningNowCursor.top}}rpx;"
-          >
-            <view class="timeline-now-axis">
-              <view class="timeline-now-dot"></view>
-              <text class="timeline-now-label">{{morningNowCursor.label}}</text>
-            </view>
-            <view class="timeline-now-line"></view>
-          </view>
-
-          <view class="half-column">
-            <view
-              wx:for="{{morningRecords}}"
-              wx:key="id"
-              class="board-card card timed-card {{item.color}}"
-              style="top: {{item.top}}rpx; height: {{item.height}}rpx; left: {{item.leftPercent}}%; width: {{item.widthPercent}}%;"
-            >
-              <template is="completedRecordCard" data="{{record: item}}" />
-            </view>
-            <view wx:if="{{morningRecords.length === 0}}" class="column-empty">无</view>
-          </view>
-        </view>
+        <view class="timeline-now-line"></view>
       </view>
 
-      <view class="half-board">
-        <view class="half-header">下半天</view>
-        <view class="half-body" style="height: {{afternoonBoardHeight}}rpx;">
-          <view class="timeline-axis" style="height: {{afternoonBoardHeight}}rpx;">
-            <view
-              wx:for="{{afternoonTimelineMarkers}}"
-              wx:key="label"
-              class="timeline-marker"
-              style="top: {{item.top}}rpx;"
-            >
-              <view class="timeline-dot"></view>
-              <text class="timeline-label">{{item.label}}</text>
-            </view>
-            <view class="timeline-line"></view>
-          </view>
-
+      <view class="board-column completed-day-column">
+        <view class="column-body timed-body" style="height: {{boardHeight}}rpx;">
           <view
-            wx:if="{{afternoonNowCursor.visible}}"
-            class="timeline-now"
-            style="top: {{afternoonNowCursor.top}}rpx;"
+            wx:for="{{records}}"
+            wx:key="id"
+            class="board-card card timed-card {{item.color}} {{item.isCompact ? 'timed-card-compact' : ''}}"
+            style="top: {{item.top}}rpx; height: {{item.height}}rpx; left: {{item.leftPercent}}%; width: {{item.widthPercent}}%;"
           >
-            <view class="timeline-now-axis">
-              <view class="timeline-now-dot"></view>
-              <text class="timeline-now-label">{{afternoonNowCursor.label}}</text>
-            </view>
-            <view class="timeline-now-line"></view>
+            <template is="completedRecordCard" data="{{record: item}}" />
           </view>
-
-          <view class="half-column">
-            <view
-              wx:for="{{afternoonRecords}}"
-              wx:key="id"
-              class="board-card card timed-card {{item.color}}"
-              style="top: {{item.top}}rpx; height: {{item.height}}rpx; left: {{item.leftPercent}}%; width: {{item.widthPercent}}%;"
-            >
-              <template is="completedRecordCard" data="{{record: item}}" />
-            </view>
-            <view wx:if="{{afternoonRecords.length === 0}}" class="column-empty">无</view>
-          </view>
+          <view wx:if="{{records.length === 0}}" class="column-empty">无</view>
         </view>
       </view>
     </view>
   </view>
 </scroll-view>
+</view>

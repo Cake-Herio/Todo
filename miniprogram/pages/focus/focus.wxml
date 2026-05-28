@@ -18,16 +18,43 @@
       </view>
 
       <view class="focus-stage">
-        <view class="timer-ring">
-          <view class="ring-track"></view>
-          <view class="ring-dot-orbit" style="transform: rotate({{ringAngle}}deg);">
-            <view class="ring-dot"></view>
+        <view class="focus-stage-core">
+          <view class="timer-ring">
+            <view class="ring-track"></view>
+            <view class="ring-dot-orbit" style="transform: rotate({{ringAngle}}deg);">
+              <view class="ring-dot"></view>
+            </view>
+            <view class="ring-glow {{controlsPhase !== 'idle' ? (isPaused ? 'is-paused' : '') : 'is-idle'}}"></view>
+            <view class="ring-center">
+              <text class="tree-label">树</text>
+              <text class="time-display">{{timeText}}</text>
+              <text class="time-hint">{{hintText}}</text>
+            </view>
           </view>
-          <view class="ring-glow {{controlsPhase !== 'idle' ? (isPaused ? 'is-paused' : '') : 'is-idle'}}"></view>
-          <view class="ring-center">
-            <text class="tree-label">树</text>
-            <text class="time-display">{{timeText}}</text>
-            <text class="time-hint">{{hintText}}</text>
+
+          <view wx:if="{{controlsPhase === 'idle'}}" class="focus-idle-tags">
+            <view class="focus-idle-h-fade focus-idle-h-fade-left {{showIdleTagScrollFadeLeft ? 'is-visible' : ''}}"></view>
+            <scroll-view
+              class="focus-idle-tag-scroll"
+              scroll-x
+              enhanced
+              show-scrollbar="{{false}}"
+              enable-flex
+              bindscroll="onIdleTagScroll"
+            >
+              <view class="focus-idle-tag-list">
+                <view
+                  wx:for="{{tags}}"
+                  wx:key="*this"
+                  class="focus-idle-tag {{selectedTag === item ? 'is-active' : ''}}"
+                  data-tag="{{item}}"
+                  bindtap="selectTag"
+                >
+                  {{item}}
+                </view>
+              </view>
+            </scroll-view>
+            <view class="focus-idle-h-fade focus-idle-h-fade-right {{showIdleTagScrollFadeRight ? 'is-visible' : ''}}"></view>
           </view>
         </view>
       </view>
@@ -77,7 +104,7 @@
       </view>
 
       <view wx:if="{{isShortFocusConfirmVisible}}" class="finish-mask mask-fade {{isShortFocusConfirmClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
-        <view class="finish-panel panel-slide {{isShortFocusConfirmClosing ? 'is-closing' : ''}}" catchtap="noop">
+        <view class="finish-panel panel-slide {{isShortFocusConfirmClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
           <view class="finish-title">专注未满 5 秒</view>
           <view class="finish-muted">未满 5 秒的计时不会记录，确定要结束吗？</view>
           <view class="finish-actions">
@@ -88,7 +115,7 @@
       </view>
 
       <view wx:if="{{isFinishPanelVisible}}" class="finish-mask mask-fade {{isFinishPanelClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
-        <view class="finish-panel panel-slide {{isFinishPanelClosing ? 'is-closing' : ''}}">
+        <view class="finish-panel panel-slide {{isFinishPanelClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}">
           <view class="finish-header">
             <view class="finish-title">这次完成了什么？</view>
             <view wx:if="{{timePreviewText}}" class="finish-time-badge">{{timePreviewText}}</view>
@@ -109,11 +136,11 @@
                 <view
                   wx:for="{{tags}}"
                   wx:key="*this"
-                  class="finish-tag {{selectedTag === item ? 'active' : ''}}"
+                  class="finish-tag-option"
                   data-tag="{{item}}"
                   bindtap="selectTag"
                 >
-                  {{item}}
+                  <plan-tag-pill name="{{item}}" size="sm" active="{{selectedTag === item}}" />
                 </view>
               </view>
             </scroll-view>
@@ -148,7 +175,7 @@
                   data-id="{{item.id}}"
                   bindtap="selectLinkedPlan"
                 >
-                  <text class="finish-plan-tag">{{item.tag}}</text>
+                  <plan-tag-pill name="{{item.tag}}" size="sm" active="{{linkedPlanId === item.id}}" />
                   <text class="finish-plan-meta">{{item.timeLabel}}</text>
                   <text wx:if="{{item.subtitle}}" class="finish-plan-subtitle">{{item.subtitle}}</text>
                 </view>

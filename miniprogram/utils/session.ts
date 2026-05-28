@@ -1,4 +1,5 @@
-import { DEFAULT_INVITE_CODE } from './cloud-config'
+import { getFallbackAvatarUrl, toDisplayAvatarUrl } from './avatar-display'
+import { DEFAULT_INVITE_CODE, SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 
 export interface UserSession {
   openid?: string
@@ -99,6 +100,22 @@ export const getDisplayAvatarUrl = () => {
   return ''
 }
 
+/** 共享空间中另一位成员的昵称（用于筛选、计划归属等 UI） */
+export const getPartnerDisplayNickname = () => {
+  const session = getSession()
+  const nickname = session?.partnerNickname?.trim()
+  return nickname || '对方'
+}
+
+export const getPartnerDisplayAvatarUrl = () => {
+  const session = getSession()
+  if (session?.partnerAvatarUrl) {
+    return toDisplayAvatarUrl(session.partnerAvatarUrl, getFallbackAvatarUrl('partner'))
+  }
+
+  return ''
+}
+
 const isTempAvatarPath = (avatarUrl: string) =>
   avatarUrl.startsWith('wxfile://') || avatarUrl.startsWith('http://tmp') || !avatarUrl.startsWith('cloud://')
 
@@ -163,7 +180,7 @@ export const verifyInviteCode = async (
 ) => {
   const previousSession = getSession()
   const result = await wx.cloud.callFunction({
-    name: 'verifyInvite',
+    name: SHARED_SPACE_CLOUD_FUNCTION,
     data: {
       code,
       nickname: profile?.nickname,
@@ -204,4 +221,59 @@ export const verifyInviteCode = async (
 
   saveSession(session)
   return session
+}
+
+interface RestoreSessionResult {
+  ok?: boolean
+  exists?: boolean
+  message?: string
+  openid?: string
+  sharedSpaceId?: string
+  nickname?: string
+  avatarUrl?: string
+  inviteVerified?: boolean
+  partner?: {
+    openid?: string
+    nickname?: string
+    avatarUrl?: string
+  } | null
+}
+
+/** 云端已有同 openid 用户时，免登录恢复本地 session */
+export const tryRestoreSessionFromCloud = async (): Promise<UserSession | null> => {
+  if (isProfileComplete()) {
+    return getSession()
+  }
+
+  try {
+    const result = await wx.cloud.callFunction({
+      name: SHARED_SPACE_CLOUD_FUNCTION,
+      data: { action: 'restoreSession' },
+    })
+    const payload = result.result as RestoreSessionResult
+
+    if (!payload?.ok || !payload.exists || !payload.openid) {
+      return null
+    }
+
+    const hasSharedSpace = Boolean(payload.sharedSpaceId && payload.inviteVerified !== false)
+    const session: UserSession = {
+      openid: payload.openid,
+      sharedSpaceId: payload.sharedSpaceId || '',
+      inviteVerified: hasSharedSpace,
+      soloMode: !hasSharedSpace,
+      nickname: payload.nickname?.trim() || '我',
+      avatarUrl: payload.avatarUrl || '',
+      profileCompleted: true,
+      partnerOpenid: payload.partner?.openid,
+      partnerNickname: payload.partner?.nickname,
+      partnerAvatarUrl: payload.partner?.avatarUrl,
+    }
+
+    saveSession(session)
+    return session
+  } catch (error) {
+    console.warn('[session] restoreSession failed', error)
+    return null
+  }
 }

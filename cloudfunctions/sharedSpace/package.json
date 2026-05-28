@@ -1,5 +1,5 @@
 {
-  "name": "verifyInvite",
+  "name": "sharedSpace",
   "version": "1.0.0",
   "description": "Verify invite code and bind shared space",
   "main": "index.js",

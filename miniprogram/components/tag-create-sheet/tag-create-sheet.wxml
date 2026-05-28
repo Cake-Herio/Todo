@@ -1,9 +1,9 @@
 <view wx:if="{{shouldShow}}" class="tag-create-mask mask-fade {{isClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
-  <view class="tag-create-panel panel-pop {{isClosing ? 'is-closing' : ''}}" catchtap="noop">
+  <view class="tag-create-panel panel-pop {{isClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
     <view class="tag-create-header">
       <view>
-        <view class="tag-create-title">新增主题</view>
-        <view class="tag-create-subtitle">设置名称和颜色</view>
+        <view class="tag-create-title">{{isEditMode ? '修改主题' : '新增主题'}}</view>
+        <view class="tag-create-subtitle">{{isEditMode ? '更新名称和颜色' : '设置名称和颜色'}}</view>
       </view>
       <view class="tag-create-close" catchtap="closeSheet">×</view>
     </view>
@@ -16,6 +16,29 @@
       placeholder="例如：冥想"
       bindinput="onTagNameInput"
     />
+
+    <block wx:if="{{showVisibilityPicker && !isEditMode}}">
+      <view class="tag-create-label">标签类型</view>
+      <view class="tag-visibility-switch-wrap">
+        <view class="tag-visibility-switch">
+          <view class="tag-visibility-switch-thumb {{tagVisibility === 'private' ? 'is-right' : ''}}"></view>
+          <view
+            class="tag-visibility-switch-item {{tagVisibility === 'shared' ? 'active' : ''}}"
+            data-visibility="shared"
+            catchtap="chooseVisibility"
+          >
+            共用标签
+          </view>
+          <view
+            class="tag-visibility-switch-item {{tagVisibility === 'private' ? 'active' : ''}}"
+            data-visibility="private"
+            catchtap="chooseVisibility"
+          >
+            私人标签
+          </view>
+        </view>
+      </view>
+    </block>
 
     <view class="tag-create-label">颜色</view>
     <view class="tag-color-preview-row">
@@ -48,8 +71,9 @@
         max="360"
         step="1"
         value="{{hueValue}}"
-        activeColor="{{tagColor}}"
-        backgroundColor="#E4F2E9"
+        activeColor="transparent"
+        backgroundColor="transparent"
+        block-color="#FFFFFF"
         block-size="22"
         bindchanging="onHueChanging"
         bindchange="onHueChange"
@@ -58,7 +82,7 @@
 
     <view class="tag-create-actions">
       <button class="tag-create-cancel secondary-button" catchtap="closeSheet">取消</button>
-      <button class="tag-create-confirm primary-button" catchtap="confirmSheet">添加</button>
+      <button class="tag-create-confirm primary-button" catchtap="confirmSheet">{{isEditMode ? '保存' : '添加'}}</button>
     </view>
   </view>
 </view>

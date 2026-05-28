@@ -4,7 +4,28 @@
   "functionRoot": "./cloudfunctions",
   "functions": [
     {
-      "name": "verifyInvite",
+      "name": "sharedSpace",
+      "timeout": 10,
+      "runtime": "Nodejs16.13",
+      "installDependency": true,
+      "handler": "index.main"
+    },
+    {
+      "name": "focusPresence",
+      "timeout": 10,
+      "runtime": "Nodejs16.13",
+      "installDependency": true,
+      "handler": "index.main"
+    },
+    {
+      "name": "activitySmith",
+      "timeout": 10,
+      "runtime": "Nodejs16.13",
+      "installDependency": true,
+      "handler": "index.main"
+    },
+    {
+      "name": "bark",
       "timeout": 10,
       "runtime": "Nodejs16.13",
       "installDependency": true,

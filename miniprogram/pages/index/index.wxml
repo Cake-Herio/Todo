@@ -36,7 +36,20 @@
       </view>
     </view>
 
-    <view wx:if="{{homeContentVisible && partnerFocusVisible}}" class="companion-live card home-reveal-item {{homeRevealActive ? 'home-reveal-delay-2' : 'is-visible'}}">
+    <view wx:if="{{homeContentVisible && selfFocusVisible}}" class="companion-live card home-reveal-item {{homeRevealActive ? 'home-reveal-delay-2' : 'is-visible'}}" bindtap="goFocusResume">
+      <view class="companion-avatar-wrap">
+        <view class="companion-breathe-ring companion-breathe-ring-a"></view>
+        <view class="companion-breathe-ring companion-breathe-ring-b"></view>
+        <view class="companion-avatar-ring"></view>
+        <image class="companion-avatar" src="{{selfFocus.avatarUrl}}" mode="aspectFill"></image>
+      </view>
+      <view class="companion-live-main">
+        <view class="companion-live-title">{{selfFocus.name}}</view>
+        <view class="companion-live-desc">{{selfFocus.status}} · {{selfFocus.duration}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{homeContentVisible && partnerFocusVisible}}" class="companion-live card home-reveal-item {{homeRevealActive ? 'home-reveal-delay-3' : 'is-visible'}}">
       <view class="companion-avatar-wrap">
         <view class="companion-breathe-ring companion-breathe-ring-a"></view>
         <view class="companion-breathe-ring companion-breathe-ring-b"></view>
@@ -44,8 +57,8 @@
         <image class="companion-avatar" src="{{partner.avatarUrl}}" mode="aspectFill"></image>
       </view>
       <view class="companion-live-main">
-        <view class="companion-live-title">{{partner.name}} · {{partner.status}}</view>
-        <view class="companion-live-desc">{{partner.focus}} · {{partner.duration}}</view>
+        <view class="companion-live-title">{{partner.name}}</view>
+        <view class="companion-live-desc">{{partner.status}} · {{partner.duration}}</view>
       </view>
     </view>
 
@@ -68,8 +81,8 @@
   </view>
 </scroll-view>
 
-<view wx:if="{{isVoiceMaskVisible}}" class="voice-mask mask-fade {{isVoiceCancelling ? 'cancelling' : ''}} {{isVoiceMaskClosing ? 'is-closing' : ''}}" catchtouchmove="onVoiceMove">
-  <view class="voice-panel panel-pop {{isVoiceMaskClosing ? 'is-closing' : ''}}">
+<view wx:if="{{isVoiceMaskVisible}}" class="voice-mask mask-fade {{isVoiceCancelling ? 'cancelling' : ''}} {{isVoiceMaskClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="onVoiceMove">
+  <view class="voice-panel panel-pop {{isVoiceMaskClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}">
     <view class="mic-circle">
       <view class="mic-head"></view>
       <view class="mic-line"></view>
@@ -87,8 +100,8 @@
   </view>
 </view>
 
-<view wx:if="{{isAiProcessing}}" class="voice-mask ai-processing-mask mask-fade {{isAiProcessingClosing ? 'is-closing' : ''}}" catchtouchmove="noop">
-  <view class="voice-panel panel-pop {{isAiProcessingClosing ? 'is-closing' : ''}}">
+<view wx:if="{{isAiProcessing}}" class="voice-mask ai-processing-mask mask-fade {{isAiProcessingClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
+  <view class="voice-panel panel-pop {{isAiProcessingClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}">
     <view class="processing-ring"></view>
     <view class="record-title">{{aiProcessingTitle}}</view>
     <view class="voice-processing-text">{{aiProcessingText}}</view>
@@ -96,8 +109,8 @@
   </view>
 </view>
 
-<view wx:if="{{isAiDraftVisible}}" class="ai-draft-mask mask-fade {{isAiDraftClosing ? 'is-closing' : ''}}" catchtouchmove="noop">
-  <view class="ai-draft-panel panel-pop {{isAiDraftClosing ? 'is-closing' : ''}}" catchtap="noop">
+<view wx:if="{{isAiDraftVisible}}" class="ai-draft-mask mask-fade {{isAiDraftClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
+  <view class="ai-draft-panel panel-pop {{isAiDraftClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
     <block wx:if="{{!isAiDraftEditVisible}}">
       <view class="ai-draft-header">
         <view>
@@ -111,7 +124,7 @@
         <view wx:for="{{aiDraftCards}}" wx:key="id" class="ai-draft-card">
           <view class="ai-draft-top-row">
             <view class="ai-draft-meta-row">
-              <view class="ai-draft-tag">{{item.tag}}</view>
+              <plan-tag-pill name="{{item.tag}}" size="sm" />
               <view class="ai-draft-date">{{item.dateLabel}}</view>
               <view class="ai-draft-time">{{item.timeLabel}}</view>
             </view>
@@ -162,12 +175,12 @@
             <view class="plan-form-label">归属成员</view>
             <view class="plan-owner-row">
               <view class="plan-owner-chip {{editPlanForm.ownerKey === 'me' ? 'active' : ''}}" data-owner="me" bindtap="chooseEditPlanOwner">
-                <image class="filter-avatar green" src="/assets/avatars/me.png" mode="aspectFill"></image>
+                <image class="filter-avatar green" src="{{avatarUrl}}" mode="aspectFill"></image>
                 <text>我</text>
               </view>
               <view class="plan-owner-chip {{editPlanForm.ownerKey === 'partner' ? 'active' : ''}}" data-owner="partner" bindtap="chooseEditPlanOwner">
-                <image class="filter-avatar blue" src="/assets/avatars/partner.png" mode="aspectFill"></image>
-                <text>对方</text>
+                <image class="filter-avatar blue" src="{{partnerAvatarUrl}}" mode="aspectFill"></image>
+                <text>{{partnerNickname}}</text>
               </view>
             </view>
           </block>
@@ -186,13 +199,18 @@
               <view class="tag-scroll-list">
                 <view
                   wx:for="{{quickTags}}"
-                  wx:key="name"
-                  class="plan-tag-chip {{editPlanForm.tag === item.name ? 'active' : ''}}"
+                  wx:key="id"
+                  class="plan-tag-option"
                   data-tag="{{item.name}}"
+                  data-tag-id="{{item.id}}"
                   bindtap="chooseEditPlanTag"
                 >
-                  <text class="plan-tag-dot" style="background: {{item.color}};"></text>
-                  {{item.name}}
+                  <plan-tag-pill
+                    name="{{item.name}}"
+                    color="{{item.color}}"
+                    size="md"
+                    active="{{editPlanForm.tagId === item.id}}"
+                  />
                 </view>
               </view>
             </scroll-view>
@@ -271,8 +289,8 @@
   </view>
 </view>
 
-<view wx:if="{{isLoginSheetVisible}}" class="login-sheet-mask mask-fade {{isLoginSheetClosing ? 'is-closing' : ''}}" catchtouchmove="noop" bindtap="closeLoginSheet">
-  <view class="login-sheet-panel panel-pop {{isLoginSheetClosing ? 'is-closing' : ''}}" catchtap="noop">
+<view wx:if="{{isLoginSheetVisible}}" class="login-sheet-mask mask-fade {{isLoginSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop" bindtap="closeLoginSheet">
+  <view class="login-sheet-panel panel-pop {{isLoginSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
     <view class="login-sheet-title">完善个人信息</view>
     <view class="login-sheet-desc">填写邀请码可加入共享空间；不填则单人使用</view>
     <view class="login-sheet-form">
@@ -333,8 +351,8 @@
   </button>
 </view>
 
-<view wx:if="{{isPickerSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isPickerSheetClosing ? 'is-closing' : ''}}" catchtap="closePickerSheet" catchtouchmove="noop">
-  <view class="plan-picker-sheet panel-pop {{isPickerSheetClosing ? 'is-closing' : ''}}" catchtap="noop">
+<view wx:if="{{isPickerSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isPickerSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="closePickerSheet" catchtouchmove="noop">
+  <view class="plan-picker-sheet panel-pop {{isPickerSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
     <view class="plan-picker-sheet-header">
       <text class="plan-picker-sheet-btn" bindtap="closePickerSheet">取消</text>
       <text class="plan-picker-sheet-title">{{pickerSheetTitle}}</text>
@@ -344,6 +362,7 @@
     <picker-view
       wx:if="{{pickerSheetKind === 'date'}}"
       class="plan-picker-wheel"
+      style="{{pageFontStyle}}"
       value="{{pickerTempValue}}"
       bindchange="onPickerSheetChange"
       indicator-class="plan-picker-indicator"
@@ -362,6 +381,7 @@
     <picker-view
       wx:elif="{{pickerSheetKind === 'time-start' || pickerSheetKind === 'time-end'}}"
       class="plan-picker-wheel"
+      style="{{pageFontStyle}}"
       value="{{pickerTempValue}}"
       bindchange="onPickerSheetChange"
       indicator-class="plan-picker-indicator"
@@ -377,6 +397,7 @@
     <picker-view
       wx:else
       class="plan-picker-wheel"
+      style="{{pageFontStyle}}"
       value="{{pickerTempValue}}"
       bindchange="onPickerSheetChange"
       indicator-class="plan-picker-indicator"

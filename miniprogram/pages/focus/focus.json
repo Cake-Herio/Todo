@@ -2,6 +2,7 @@
   "disableSwipeBack": true,
   "usingComponents": {
     "font-page-meta": "/components/font-page-meta/font-page-meta",
-    "tag-create-sheet": "/components/tag-create-sheet/tag-create-sheet"
+    "tag-create-sheet": "/components/tag-create-sheet/tag-create-sheet",
+    "plan-tag-pill": "/components/plan-tag-pill/plan-tag-pill"
   }
 }

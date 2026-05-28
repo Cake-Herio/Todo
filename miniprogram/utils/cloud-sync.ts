@@ -1,5 +1,5 @@
 import { registerCloudMutateHandler } from './cloud-bridge'
-import { getCloudEnvId, isCloudEnabled } from './cloud-config'
+import { getCloudEnvId, isCloudEnabled, SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 import {
   getLocalData,
   saveLocalData,
@@ -7,10 +7,16 @@ import {
   type OwnerKey,
   type Plan,
 } from './data'
-import { getSession, isSessionReady, type UserSession } from './session'
+import { refreshSpaceMembersFromCloud } from './owner-filters'
+import { saveCachedCloudTags, syncPlanTagsFromCloud } from './plan-tags'
+import { getSession, isSessionReady, type UserSession, getPartnerDisplayNickname } from './session'
 
 const BOOTSTRAP_KEY = 'myforest_cloud_bootstrapped'
 const SYNC_DEBOUNCE_MS = 800
+
+export const resetCloudBootstrap = () => {
+  wx.removeStorageSync(BOOTSTRAP_KEY)
+}
 
 let syncPromise: Promise<boolean> | null = null
 let pushTimer: ReturnType<typeof setTimeout> | null = null
@@ -28,6 +34,27 @@ interface CloudRecordDoc extends Omit<CompletedRecord, 'ownerKey'> {
   sharedSpaceId: string
 }
 
+interface SyncSharedDataResult {
+  ok?: boolean
+  message?: string
+  plans?: CloudPlanDoc[]
+  records?: CloudRecordDoc[]
+  tags?: Array<{
+    id: string
+    name: string
+    color: string
+    visibility: 'shared' | 'private'
+    ownerOpenid?: string
+    sharedSpaceId?: string
+  }>
+}
+
+interface SharedCloudPayload {
+  plans: CloudPlanDoc[]
+  records: CloudRecordDoc[]
+  tags: SyncSharedDataResult['tags']
+}
+
 const getDb = () => wx.cloud.database()
 
 const resolveOwnerKey = (userId: string, session: UserSession): OwnerKey =>
@@ -43,7 +70,7 @@ const resolveOwnerDisplay = (ownerKey: OwnerKey, session: UserSession) => {
   }
 
   return {
-    ownerName: session.partnerNickname || '对方',
+    ownerName: getPartnerDisplayNickname(),
     ownerAvatar: session.partnerNickname?.slice(0, 1) || 'W',
     color: 'blue' as const,
   }
@@ -61,6 +88,7 @@ const cloudPlanToPlan = (doc: CloudPlanDoc, session: UserSession): Plan => {
     color: display.color,
     title: doc.title,
     tag: doc.tag,
+    tagId: doc.tagId,
     remark: doc.remark,
     date: doc.date,
     startTime: doc.startTime,
@@ -80,6 +108,7 @@ const cloudRecordToRecord = (doc: CloudRecordDoc, session: UserSession): Complet
   ownerKey: resolveOwnerKey(doc.userId, session),
   title: doc.title,
   tag: doc.tag,
+  tagId: doc.tagId,
   detail: doc.detail,
   startedAt: doc.startedAt,
   completedAt: doc.completedAt,
@@ -97,6 +126,7 @@ const planToCloudDoc = (plan: Plan, session: UserSession): CloudPlanDoc => {
     sharedSpaceId: session.sharedSpaceId,
     title: plan.title,
     tag: plan.tag,
+    tagId: plan.tagId,
     remark: plan.remark,
     date: plan.date,
     startTime: plan.startTime,
@@ -120,6 +150,7 @@ const recordToCloudDoc = (record: CompletedRecord, session: UserSession): CloudR
     sharedSpaceId: session.sharedSpaceId,
     title: record.title,
     tag: record.tag,
+    tagId: record.tagId,
     detail: record.detail,
     startedAt: record.startedAt,
     completedAt: record.completedAt,
@@ -153,6 +184,40 @@ const fetchCloudCollection = async <T>(collectionName: string, sharedSpaceId: st
   }
 
   return all
+}
+
+const fetchSharedDataViaCloudFunction = async (): Promise<SharedCloudPayload | null> => {
+  const callers = [
+    () =>
+      wx.cloud.callFunction({
+        name: SHARED_SPACE_CLOUD_FUNCTION,
+        data: { action: 'syncSharedData' },
+      }),
+    () =>
+      wx.cloud.callFunction({
+        name: 'focusPresence',
+        data: { action: 'syncSharedData' },
+      }),
+  ]
+
+  for (const call of callers) {
+    try {
+      const result = await call()
+      const payload = result.result as SyncSharedDataResult
+
+      if (payload?.ok) {
+        return {
+          plans: payload.plans || [],
+          records: payload.records || [],
+          tags: payload.tags || [],
+        }
+      }
+    } catch (error) {
+      console.warn('[cloud] syncSharedData cloud function failed', error)
+    }
+  }
+
+  return null
 }
 
 const upsertCloudDoc = async (collectionName: string, sharedSpaceId: string, id: string, data: Record<string, unknown>) => {
@@ -246,6 +311,17 @@ const pushLocalDataToCloudNow = async () => {
   return pushPromise
 }
 
+/** 刷新成员信息并同步共享空间数据到本地 */
+export const bootstrapSharedSpace = async (): Promise<boolean> => {
+  if (!isSessionReady()) {
+    return false
+  }
+
+  await refreshSpaceMembersFromCloud()
+  const [dataChanged, tagsChanged] = await Promise.all([syncFromCloud(), syncPlanTagsFromCloud()])
+  return dataChanged || tagsChanged
+}
+
 /** 从云拉取并写入本地缓存，UI 不直接读云 */
 export const syncFromCloud = async (): Promise<boolean> => {
   if (!isSessionReady()) {
@@ -263,10 +339,26 @@ export const syncFromCloud = async (): Promise<boolean> => {
     }
 
     try {
-      const [cloudPlans, cloudRecords] = await Promise.all([
-        fetchCloudCollection<CloudPlanDoc>('plans', session.sharedSpaceId),
-        fetchCloudCollection<CloudRecordDoc>('completed_records', session.sharedSpaceId),
-      ])
+      const sharedData = await fetchSharedDataViaCloudFunction()
+      const [cloudPlans, cloudRecords] = sharedData
+        ? [sharedData.plans, sharedData.records]
+        : await Promise.all([
+            fetchCloudCollection<CloudPlanDoc>('plans', session.sharedSpaceId!),
+            fetchCloudCollection<CloudRecordDoc>('completed_records', session.sharedSpaceId!),
+          ])
+
+      if (sharedData?.tags?.length) {
+        saveCachedCloudTags(
+          sharedData.tags.map((tag) => ({
+            id: tag.id,
+            name: tag.name,
+            color: tag.color,
+            visibility: tag.visibility,
+            ownerOpenid: tag.ownerOpenid,
+            sharedSpaceId: tag.sharedSpaceId,
+          })),
+        )
+      }
 
       const local = getLocalData()
       const bootstrapped = wx.getStorageSync(BOOTSTRAP_KEY) as boolean
@@ -305,7 +397,7 @@ export const syncFromCloud = async (): Promise<boolean> => {
 export const refreshWithLocalFirst = (refresh: () => void) => {
   refresh()
 
-  void syncFromCloud()
+  void bootstrapSharedSpace()
     .then((changed) => {
       if (changed) {
         refresh()

@@ -1,0 +1,9 @@
+{
+  "name": "focusPresence",
+  "version": "1.0.0",
+  "description": "Shared focus session presence for MyForest",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

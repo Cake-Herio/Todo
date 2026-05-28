@@ -1,10 +1,15 @@
 import { completePlan, deletePlan, getOwnerAvatarUrl, getPlanById, getPlansByDate, getToday, updatePlan, type OwnerKey, type Plan } from '../../utils/data'
 import { refreshWithLocalFirst } from '../../utils/cloud-sync'
 import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
+import { getDisplayAvatarUrl, getPartnerDisplayAvatarUrl, getPartnerDisplayNickname } from '../../utils/session'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
-import { addPlanTagOption, DEFAULT_PLAN_TAGS, getPlanTagOptions } from '../../utils/plan-tags'
+import { addPlanTagOption, DEFAULT_PLAN_TAGS, getPlanTagOptions, resolveTagBinding } from '../../utils/plan-tags'
 import { getScrollFadeState } from '../../utils/scroll-fade'
+import {
+  applyTimelineBoardUpdate,
+  getDayBoardTopOffsetRpx,
+} from '../../utils/timeline-scroll'
 
 interface DayPlanView {
   id: string
@@ -32,6 +37,7 @@ interface TimedPlanView extends DayPlanView {
   laneCount: number
   leftPercent: number
   widthPercent: number
+  isCompact: boolean
 }
 
 interface TimedInterval {
@@ -177,6 +183,7 @@ type PeriodKey = 'morning' | 'afternoon' | 'evening'
 interface EditPlanForm {
   ownerKey: OwnerKey
   tag: string
+  tagId: string
   remark: string
   date: string
   scheduleKind: ScheduleKind
@@ -261,10 +268,12 @@ const getPeriodIndex = (periodKey: 'morning' | 'afternoon' | 'evening') =>
 
 const buildEditPlanForm = (raw: Plan, fallbackDate: string): EditPlanForm => {
   const periodKey = getPeriodKey(raw) || 'morning'
+  const tagBinding = resolveTagBinding(raw.tag, raw.tagId)
 
   return {
     ownerKey: raw.ownerKey,
-    tag: raw.tag,
+    tag: tagBinding.tag,
+    tagId: tagBinding.tagId,
     remark: raw.remark || '',
     date: raw.date || fallbackDate,
     scheduleKind: getScheduleKind(raw),
@@ -275,17 +284,22 @@ const buildEditPlanForm = (raw: Plan, fallbackDate: string): EditPlanForm => {
   }
 }
 
-const createDefaultEditPlanForm = (date: string): EditPlanForm => ({
-  ownerKey: 'me' as OwnerKey,
-  tag: DEFAULT_PLAN_TAGS[0],
-  remark: '',
-  date,
-  scheduleKind: 'timed' as ScheduleKind,
-  startTime: '09:00',
-  endTime: '10:00',
-  periodKey: 'morning' as const,
-  periodIndex: 0,
-})
+const createDefaultEditPlanForm = (date: string): EditPlanForm => {
+  const tagBinding = resolveTagBinding(DEFAULT_PLAN_TAGS[0])
+
+  return {
+    ownerKey: 'me' as OwnerKey,
+    tag: tagBinding.tag,
+    tagId: tagBinding.tagId,
+    remark: '',
+    date,
+    scheduleKind: 'timed' as ScheduleKind,
+    startTime: '09:00',
+    endTime: '10:00',
+    periodKey: 'morning' as const,
+    periodIndex: 0,
+  }
+}
 
 const toDayPlanView = (
   plan: Plan,
@@ -301,7 +315,7 @@ const toDayPlanView = (
   remark: plan.remark || null,
   status: statusTextMap[plan.status],
   color: plan.color,
-  isExpired: isPlanExpired(plan, selectedDate, periodKey),
+  isExpired: plan.status !== 'completed' && isPlanExpired(plan, selectedDate, periodKey),
 })
 
 const toTimedPlanView = (plan: Plan, selectedDate: string): TimedPlanView => ({
@@ -312,6 +326,7 @@ const toTimedPlanView = (plan: Plan, selectedDate: string): TimedPlanView => ({
   laneCount: 1,
   leftPercent: 0,
   widthPercent: 100,
+  isCompact: false,
 })
 
 const estimateRemarkLines = (remark: string, widthPercent: number) => {
@@ -466,6 +481,7 @@ const applyTimeScaleToTimedPlans = (plans: TimedPlanView[], rawPlans: Plan[], mi
 
     plan.top = top
     plan.height = Math.max(1, bottom - top)
+    plan.isCompact = endMin - startMin <= 20
   })
 }
 
@@ -654,9 +670,12 @@ Component({
     safeTopPx: 0,
     dateTitle: formatDateTitle(getToday()),
     selectedDate: getToday(),
+    avatarUrl: getDisplayAvatarUrl() || getOwnerAvatarUrl('me'),
     filters: getOwnerFilterStateLocal('all').filters,
     activeFilter: getOwnerFilterStateLocal('all').activeFilter,
     singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
+    partnerNickname: getPartnerDisplayNickname(),
+    partnerAvatarUrl: getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner'),
     boardHeight: timeTop(TIMELINE_END),
     morningZone: { top: timeTop(6), height: timeTop(12) - timeTop(6) } as PeriodZone,
     afternoonZone: { top: timeTop(12), height: timeTop(18) - timeTop(12) } as PeriodZone,
@@ -690,10 +709,15 @@ Component({
     showPlanTagScrollFadeLeft: false,
     showPlanTagScrollFadeRight: false,
     nowCursor: { visible: false, top: 0, label: '' } as NowCursor,
+    scrollTop: 0,
+    scrollWithTop: false,
+    boardVisible: true,
+    hasAutoScrolled: false,
     pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
     attached() {
+      this.initPageInsets()
       this.refreshPlans()
       this.startNowCursorTimer()
     },
@@ -728,10 +752,14 @@ Component({
     },
     onLoad(query: { date?: string }) {
       this.initPageInsets()
+      const prevDate = this.data.selectedDate
       const selectedDate = query.date || getToday()
+      const dateChanged = prevDate !== selectedDate
+
       this.setData({
         selectedDate,
         dateTitle: formatDateTitle(selectedDate),
+        ...(dateChanged ? { hasAutoScrolled: false, boardVisible: false } : {}),
       })
       this.refreshPlans()
     },
@@ -742,6 +770,9 @@ Component({
         filters: state.filters,
         activeFilter: state.activeFilter,
         singleUserMode: state.singleUserMode,
+        partnerNickname: getPartnerDisplayNickname(),
+        partnerAvatarUrl: getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner'),
+        avatarUrl: getDisplayAvatarUrl() || getOwnerAvatarUrl('me'),
       })
 
       if (state.activeFilter !== prevFilter) {
@@ -751,9 +782,8 @@ Component({
     refreshPlans() {
       const { selectedDate } = this.data
       const plans = filterPlans(getPlansByDate(selectedDate), this.data.activeFilter)
-      const activePlans = plans.filter((plan) => plan.status !== 'completed')
 
-      const timedRaw = activePlans.filter(isTimedPlan)
+      const timedRaw = plans.filter(isTimedPlan)
       const timedPlans = layoutTimedPlans(
         timedRaw.map((plan) => toTimedPlanView(plan, selectedDate)),
         timedRaw,
@@ -761,8 +791,8 @@ Component({
       const { minutesToY } = buildAdaptiveTimeScale(timedPlans, timedRaw)
       applyTimeScaleToTimedPlans(timedPlans, timedRaw, minutesToY)
 
-      const periodPlans = activePlans.filter((plan) => !isTimedPlan(plan) && getPeriodKey(plan))
-      const allDayPlans = activePlans.filter((plan) => !isTimedPlan(plan) && !getPeriodKey(plan))
+      const periodPlans = plans.filter((plan) => !isTimedPlan(plan) && getPeriodKey(plan))
+      const allDayPlans = plans.filter((plan) => !isTimedPlan(plan) && !getPeriodKey(plan))
 
       const morningPlans = periodPlans.filter((plan) => getPeriodKey(plan) === 'morning').map((plan) => toDayPlanView(plan, selectedDate, 'morning'))
       const afternoonPlans = periodPlans.filter((plan) => getPeriodKey(plan) === 'afternoon').map((plan) => toDayPlanView(plan, selectedDate, 'afternoon'))
@@ -775,19 +805,30 @@ Component({
         minutesToY,
       )
 
-      this.setData({
-        dateTitle: formatDateTitle(selectedDate),
-        timedPlans,
-        morningPlans,
-        afternoonPlans,
-        eveningPlans,
-        allDayPlans: allDayPlans.map((plan) => toDayPlanView(plan, selectedDate)),
-        morningZone,
-        afternoonZone,
-        eveningZone,
-        timelineMarkers: buildTimelineMarkers(minutesToY),
-        boardHeight: buildBoardHeight(timedPlans, eveningZone, minutesToY),
-        nowCursor: buildNowCursorWithScale(selectedDate, minutesToY),
+      const nowCursor = buildNowCursorWithScale(selectedDate, minutesToY)
+      const boardHeight = buildBoardHeight(timedPlans, eveningZone, minutesToY)
+
+      applyTimelineBoardUpdate(this, {
+        boardPayload: {
+          dateTitle: formatDateTitle(selectedDate),
+          timedPlans,
+          morningPlans,
+          afternoonPlans,
+          eveningPlans,
+          allDayPlans: allDayPlans.map((plan) => toDayPlanView(plan, selectedDate)),
+          morningZone,
+          afternoonZone,
+          eveningZone,
+          timelineMarkers: buildTimelineMarkers(minutesToY),
+          boardHeight,
+          nowCursor,
+        },
+        selectedDate,
+        nowCursor,
+        boardHeightRpx: boardHeight,
+        safeTopPx: this.data.safeTopPx,
+        boardTopOffsetRpx: getDayBoardTopOffsetRpx(),
+        hasAutoScrolled: this.data.hasAutoScrolled,
       })
 
       void this.refreshOwnerFilters()
@@ -808,8 +849,14 @@ Component({
         ;(this as WechatMiniprogram.Component.TrivialInstance & { _nowCursorTimer?: ReturnType<typeof setInterval> })._nowCursorTimer = undefined
       }
     },
-    setFilter(e: WechatMiniprogram.BaseEvent) {
-      const filter = e.currentTarget.dataset.filter
+    setFilter(e: WechatMiniprogram.CustomEvent<{ filter?: string }> | WechatMiniprogram.BaseEvent) {
+      const filter =
+        (e as WechatMiniprogram.CustomEvent<{ filter?: string }>).detail?.filter ||
+        (e.currentTarget?.dataset?.filter as string | undefined)
+      if (!filter) {
+        return
+      }
+
       this.setData({ activeFilter: filter })
       this.refreshPlans()
     },
@@ -1009,8 +1056,11 @@ Component({
       })
     },
     chooseEditPlanTag(e: WechatMiniprogram.BaseEvent) {
+      const tag = e.currentTarget.dataset.tag as string
+      const tagId = e.currentTarget.dataset.tagId as string
       this.setData({
-        'editPlanForm.tag': e.currentTarget.dataset.tag,
+        'editPlanForm.tag': tag,
+        'editPlanForm.tagId': tagId,
       })
     },
     updatePlanTagScrollFades(scrollLeft = 0) {
@@ -1050,9 +1100,9 @@ Component({
         isTagCreateVisible: false,
       })
     },
-    onTagCreateConfirm(e: WechatMiniprogram.CustomEvent<{ name: string; color: string }>) {
+    async onTagCreateConfirm(e: WechatMiniprogram.CustomEvent<{ name: string; color: string }>) {
       const { name, color } = e.detail
-      const result = addPlanTagOption(name, color)
+      const result = await addPlanTagOption(name, color, 'private')
 
       if (!result.ok) {
         wx.showToast({
@@ -1066,6 +1116,7 @@ Component({
         isTagCreateVisible: false,
         quickTags: getPlanTagOptions(),
         'editPlanForm.tag': name.trim(),
+        'editPlanForm.tagId': result.tagId || '',
       })
       wx.showToast({
         title: '已添加主题',
@@ -1112,6 +1163,7 @@ Component({
         ownerKey: plan.ownerKey,
         title: plan.tag,
         tag: plan.tag,
+        tagId: plan.tagId,
         remark: plan.remark.trim(),
         date: plan.date,
         startTime,
@@ -1149,7 +1201,7 @@ Component({
     completeActivePlan() {
       const { activePlan } = this.data
 
-      if (!activePlan) {
+      if (!activePlan || activePlan.status === '已完成') {
         return
       }
 
@@ -1171,7 +1223,7 @@ Component({
     confirmCompletePlan(id: string) {
       wx.showModal({
         title: '标记完成',
-        content: '确认后计划会打勾，并写入已完成表。',
+        content: '确认后计划会留在当日计划表，并显示绿叶标记，不会进入「已完成」日历。',
         confirmText: '确认',
         success: (res) => {
           if (!res.confirm) {

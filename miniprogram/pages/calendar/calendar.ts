@@ -8,8 +8,8 @@ import {
   type OwnerKey,
   type Plan,
 } from '../../utils/data'
+import { refreshWithLocalFirst, bootstrapSharedSpace } from '../../utils/cloud-sync'
 import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
-import { refreshWithLocalFirst } from '../../utils/cloud-sync'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, MODAL_EXIT_MS, openModal } from '../../utils/modal-dismiss'
 
@@ -36,6 +36,7 @@ type CalendarViewMode = 'plan' | 'completed'
 const COMPLETED_TYPE_FILTER = 'timed' as const
 
 const CALENDAR_HINT = '点击日期快速选择'
+const CALENDAR_VIEW_SWITCH_DURATION_MS = 280
 
 const minYear = 1970
 const maxYear = 2100
@@ -73,6 +74,81 @@ const buildPlanTone = (plan: Plan): CalendarPlanView['tone'] => {
   return plan.color
 }
 
+const parseTimeToMinutes = (time: string, treatMidnightAsEnd = false) => {
+  const [hourText, minuteText] = time.split(':')
+  let hour = Number(hourText)
+  const minute = Number(minuteText || '0')
+
+  if (treatMidnightAsEnd && hour === 0 && minute === 0) {
+    hour = 24
+  }
+
+  return hour * 60 + minute
+}
+
+const compareCalendarDayPlans = (
+  a: Plan,
+  b: Plan,
+  dateText: string,
+  todayText: string,
+  nowMinutes: number,
+) => {
+  const rank = (plan: Plan) => {
+    if (plan.status === 'completed') {
+      const startSort = plan.startTime ? parseTimeToMinutes(plan.startTime) : Number.MAX_SAFE_INTEGER
+      return { group: 3, sort: startSort }
+    }
+
+    if (plan.status === 'overdue') {
+      return {
+        group: 0,
+        sort: plan.startTime ? parseTimeToMinutes(plan.startTime) : 0,
+      }
+    }
+
+    const hasTime = Boolean(plan.startTime && plan.endTime)
+
+    if (hasTime && dateText === todayText) {
+      const startMin = parseTimeToMinutes(plan.startTime!)
+      const endMin = parseTimeToMinutes(plan.endTime!, true)
+
+      if (nowMinutes < endMin) {
+        const minutesUntil = nowMinutes < startMin ? startMin - nowMinutes : endMin - nowMinutes
+        return { group: 1, sort: minutesUntil }
+      }
+
+      return { group: 0, sort: startMin }
+    }
+
+    if (hasTime) {
+      return { group: 1, sort: parseTimeToMinutes(plan.startTime!) }
+    }
+
+    if (plan.status === 'pending' || plan.status === 'in_progress') {
+      return { group: 2, sort: plan.createdAt }
+    }
+
+    return { group: 2, sort: plan.createdAt }
+  }
+
+  const rankA = rank(a)
+  const rankB = rank(b)
+
+  if (rankA.group !== rankB.group) {
+    return rankA.group - rankB.group
+  }
+
+  return rankA.sort - rankB.sort
+}
+
+const sortCalendarDayPlans = (plans: Plan[], dateText: string) => {
+  const todayText = getToday()
+  const now = new Date()
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+
+  return [...plans].sort((a, b) => compareCalendarDayPlans(a, b, dateText, todayText, nowMinutes))
+}
+
 const mapPlanToCalendarView = (plan: Plan): CalendarPlanView => ({
   id: plan.id,
   avatarUrl: getOwnerAvatarUrl(plan.ownerKey),
@@ -99,7 +175,7 @@ const buildCalendarDays = (
 
     const dateText = formatDate(date)
     const dayPlans = filteredPlans.filter((plan) => plan.date === dateText && plan.status !== 'cancelled')
-    const visiblePlans = dayPlans.slice(0, 3).map(mapPlanToCalendarView)
+    const visiblePlans = sortCalendarDayPlans(dayPlans, dateText).slice(0, 3).map(mapPlanToCalendarView)
 
     return {
       date: dateText,
@@ -155,6 +231,8 @@ Component({
   data: {
     safeTopPx: 0,
     viewMode: 'plan' as CalendarViewMode,
+    swiperCurrent: 0,
+    viewSwitchDuration: CALENDAR_VIEW_SWITCH_DURATION_MS,
     currentYear: new Date().getFullYear(),
     currentMonth: new Date().getMonth(),
     selectedDate: getToday(),
@@ -171,29 +249,33 @@ Component({
     activeFilter: getOwnerFilterStateLocal('all').activeFilter,
     singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
     weekdays: ['一', '二', '三', '四', '五', '六', '日'],
-    days: [] as CalendarDayView[],
+    planDays: [] as CalendarDayView[],
+    completedDays: [] as CalendarDayView[],
     pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
     attached() {
       const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
       const gapPx = Math.round((16 * windowWidth) / 750)
+
       this.setData({ safeTopPx: statusBarHeight + gapPx })
-      this.refreshCalendar()
+      this.renderCalendarGrid()
     },
   },
   pageLifetimes: {
     show() {
       refreshPageFontStyle(this)
+      this.renderCalendarGrid()
+
       const pendingMode = wx.getStorageSync('calendar_view_mode') as CalendarViewMode | ''
 
       refreshWithLocalFirst(() => {
         if (pendingMode === 'completed') {
           wx.removeStorageSync('calendar_view_mode')
-          this.setData({ viewMode: 'completed' })
+          this.applyViewMode('completed')
         }
 
-        this.refreshCalendar()
+        this.renderCalendarGrid()
       })
     },
   },
@@ -207,46 +289,95 @@ Component({
         singleUserMode: state.singleUserMode,
       })
 
-      if (state.activeFilter !== prevFilter) {
-        this.refreshCalendar()
-      }
+      return state.activeFilter !== prevFilter
     },
-    refreshCalendar() {
-      const {
+    renderCalendarGrid() {
+      const { currentYear, currentMonth, activeFilter, selectedDate } = this.data
+
+      const planDays = buildCalendarDays(getPlans(), activeFilter, currentYear, currentMonth, selectedDate)
+      const completedDays = buildCompletedCalendarDays(
+        getCompletedRecords(),
+        activeFilter,
         currentYear,
         currentMonth,
-        activeFilter,
         selectedDate,
-        viewMode,
-      } = this.data
-      const days = viewMode === 'plan'
-        ? buildCalendarDays(getPlans(), activeFilter, currentYear, currentMonth, selectedDate)
-        : buildCompletedCalendarDays(getCompletedRecords(), activeFilter, currentYear, currentMonth, selectedDate)
+      )
 
       this.setData({
         monthTitle: buildMonthTitle(currentYear, currentMonth),
         calendarHint: CALENDAR_HINT,
-        days,
+        planDays,
+        completedDays,
       })
-
-      void this.refreshOwnerFilters()
     },
-    switchViewMode(e: WechatMiniprogram.BaseEvent) {
-      const mode = e.currentTarget.dataset.mode as CalendarViewMode
+    async refreshCalendar() {
+      const filterChanged = await this.refreshOwnerFilters()
+      this.renderCalendarGrid()
 
+      if (filterChanged) {
+        this.renderCalendarGrid()
+      }
+    },
+    applyViewMode(mode: CalendarViewMode) {
       if (!mode || mode === this.data.viewMode) {
         return
       }
 
-      this.setData({ viewMode: mode })
-      this.refreshCalendar()
-    },
-    setFilter(e: WechatMiniprogram.BaseEvent) {
-      const filter = e.currentTarget.dataset.filter
       this.setData({
-        activeFilter: filter,
+        viewMode: mode,
+        swiperCurrent: mode === 'plan' ? 0 : 1,
       })
-      this.refreshCalendar()
+    },
+    switchViewMode(e: WechatMiniprogram.BaseEvent) {
+      const mode = e.currentTarget.dataset.mode as CalendarViewMode
+      this.applyViewMode(mode)
+    },
+    onCalendarSwiperChange(e: WechatMiniprogram.SwiperChange) {
+      const index = e.detail.current
+      const mode: CalendarViewMode = index === 0 ? 'plan' : 'completed'
+
+      if (mode === this.data.viewMode) {
+        return
+      }
+
+      this.setData({ viewMode: mode })
+    },
+    setFilter(e: WechatMiniprogram.CustomEvent<{ filter?: string }> | WechatMiniprogram.BaseEvent) {
+      const filter =
+        (e as WechatMiniprogram.CustomEvent<{ filter?: string }>).detail?.filter ||
+        (e.currentTarget?.dataset?.filter as string | undefined)
+
+      if (!filter || filter === this.data.activeFilter || (this as WechatMiniprogram.IAnyObject).filterSwitching) {
+        return
+      }
+
+      void this.switchOwnerFilter(filter)
+    },
+    async switchOwnerFilter(filter: string) {
+      ;(this as WechatMiniprogram.IAnyObject).filterSwitching = true
+      wx.showLoading({ title: '加载中', mask: true })
+
+      try {
+        this.setData({ activeFilter: filter })
+        await bootstrapSharedSpace()
+
+        const state = getOwnerFilterStateLocal(filter)
+        this.setData({
+          filters: state.filters,
+          activeFilter: state.activeFilter,
+          singleUserMode: state.singleUserMode,
+        })
+        this.renderCalendarGrid()
+      } catch (error) {
+        console.warn('[calendar] switch owner filter failed', error)
+        wx.showToast({
+          title: '加载失败，请重试',
+          icon: 'none',
+        })
+      } finally {
+        wx.hideLoading()
+        ;(this as WechatMiniprogram.IAnyObject).filterSwitching = false
+      }
     },
     changeMonth(e: WechatMiniprogram.BaseEvent) {
       const offset = Number(e.currentTarget.dataset.offset)
@@ -294,7 +425,8 @@ Component({
     },
     goDay(e: WechatMiniprogram.BaseEvent) {
       const date = e.currentTarget.dataset.date as string
-      const day = this.data.days.find((item) => item.date === date)
+      const days = this.data.viewMode === 'plan' ? this.data.planDays : this.data.completedDays
+      const day = days.find((item) => item.date === date)
 
       if (!day?.hasItems) {
         wx.showToast({

@@ -1,8 +1,12 @@
 import { getCompletedRecords, getPlans, type CompletedRecord, type Plan } from '../../utils/data'
 import { refreshWithLocalFirst } from '../../utils/cloud-sync'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
+import { getPlanTagOptions, resolvePlanTag } from '../../utils/plan-tags'
+import { dismissModal, openModal } from '../../utils/modal-dismiss'
+import { getScrollFadeState } from '../../utils/scroll-fade'
 
 type StatsRange = 'day' | 'week' | 'month' | 'year'
+type TagFilterMode = 'all' | 'none' | 'custom'
 
 interface StatsRangeOption {
   key: StatsRange
@@ -12,19 +16,50 @@ interface StatsRangeOption {
 interface StatsCard {
   label: string
   value: string
+  icon: string
 }
 
 interface TagStatView {
   tag: string
   time: string
+  minutes: number
   percent: number
   color: string
+}
+
+interface TagStatDisplayView extends TagStatView {
+  animPercent: number
+  animTime: string
 }
 
 interface TagPieLegendView {
   tag: string
   time: string
+  minutes: number
   share: string
+  color: string
+}
+
+interface TagPieLegendDisplayView extends TagPieLegendView {
+  animShare: string
+  animTime: string
+}
+
+interface TagFilterOption {
+  tag: string
+  color: string
+  minutes: number
+  time: string
+}
+
+interface TagFilterItem {
+  tag: string
+  color: string
+  checked: boolean
+}
+
+interface TagEchoItem {
+  tag: string
   color: string
 }
 
@@ -36,6 +71,10 @@ const RANGE_OPTIONS: StatsRangeOption[] = [
 ]
 
 const TAG_COLORS = ['#98C6A8', '#7DA7D9', '#F1B86A', '#D98BB0', '#9B8DD9', '#8BC4D9', '#E09A7A', '#7BC8B8']
+
+const STATS_INTRO_MS = 720
+
+const easeOutCubic = (value: number) => 1 - (1 - value) ** 3
 
 const formatFocusMinutes = (minutes: number) => {
   if (minutes <= 0) {
@@ -54,6 +93,12 @@ const formatFocusMinutes = (minutes: number) => {
   }
 
   return `${hours}h ${rest}m`
+}
+
+const getTagBindColor = (tag: string) => {
+  const resolvedTag = resolvePlanTag(tag)
+  const option = getPlanTagOptions().find((item) => item.name === resolvedTag)
+  return option?.color || '#98C6A8'
 }
 
 const getRangeBounds = (range: StatsRange, reference = new Date()) => {
@@ -173,6 +218,46 @@ const filterPlansByRange = (plans: Plan[], range: StatsRange, anchor: number) =>
   })
 }
 
+const isTagChecked = (tag: string, mode: TagFilterMode, selectedTagKeys: string[]) => {
+  if (mode === 'all') {
+    return true
+  }
+
+  if (mode === 'none') {
+    return false
+  }
+
+  return selectedTagKeys.includes(tag)
+}
+
+const getCheckedTags = (availableTags: string[], mode: TagFilterMode, selectedTagKeys: string[]) => {
+  if (mode === 'all') {
+    return availableTags
+  }
+
+  if (mode === 'none') {
+    return []
+  }
+
+  return availableTags.filter((tag) => selectedTagKeys.includes(tag))
+}
+
+const filterByTagSelection = <T extends { tag: string }>(
+  items: T[],
+  mode: TagFilterMode,
+  selectedTagKeys: string[],
+) => {
+  if (mode === 'all') {
+    return items
+  }
+
+  if (mode === 'none') {
+    return []
+  }
+
+  return items.filter((item) => selectedTagKeys.includes(item.tag))
+}
+
 const getTagColor = (tag: string, tagOrder: string[]) => {
   const index = tagOrder.indexOf(tag)
   return TAG_COLORS[(index >= 0 ? index : 0) % TAG_COLORS.length]
@@ -193,15 +278,8 @@ const buildPieStyle = (items: Array<{ color: string; share: number }>) => {
   return `background: conic-gradient(${stops.join(', ')});`
 }
 
-const buildStatsView = (range: StatsRange, periodAnchor: number) => {
-  const records = filterRecordsByRange(getCompletedRecords(), range, periodAnchor)
-  const timedCount = records.filter((record) => record.completionMode === 'timed').length
-  const plansInRange = filterPlansByRange(getPlans(), range, periodAnchor)
-  const completedPlanCount = plansInRange.filter((plan) => plan.status === 'completed').length
-  const totalPlanCount = plansInRange.length
-  const totalMinutes = records.reduce((total, record) => total + (record.actualMinutes || 0), 0)
-
-  const tagMinutesMap = records.reduce<Record<string, number>>((result, record) => {
+const buildTagMinutesMap = (records: CompletedRecord[]) =>
+  records.reduce<Record<string, number>>((result, record) => {
     const minutes = record.actualMinutes || 0
     if (minutes <= 0) {
       return result
@@ -210,6 +288,84 @@ const buildStatsView = (range: StatsRange, periodAnchor: number) => {
     result[record.tag] = (result[record.tag] || 0) + minutes
     return result
   }, {})
+
+const buildAvailableTagFilters = (records: CompletedRecord[]): TagFilterOption[] => {
+  const tagMinutesMap = buildTagMinutesMap(records)
+
+  return Object.entries(tagMinutesMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([tag, minutes]) => ({
+      tag,
+      minutes,
+      time: formatFocusMinutes(minutes),
+      color: getTagBindColor(tag),
+    }))
+}
+
+const buildTagFilterItems = (
+  availableTagFilters: TagFilterOption[],
+  mode: TagFilterMode,
+  selectedTagKeys: string[],
+): TagFilterItem[] =>
+  availableTagFilters.map((item) => ({
+    tag: item.tag,
+    color: item.color,
+    checked: isTagChecked(item.tag, mode, selectedTagKeys),
+  }))
+
+const buildSelectedTagEcho = (
+  availableTagFilters: TagFilterOption[],
+  mode: TagFilterMode,
+  selectedTagKeys: string[],
+): TagEchoItem[] => {
+  if (mode === 'none') {
+    return []
+  }
+
+  if (mode === 'all') {
+    return availableTagFilters.map(({ tag, color }) => ({ tag, color }))
+  }
+
+  return selectedTagKeys.map((tag) => {
+    const matched = availableTagFilters.find((item) => item.tag === tag)
+    return {
+      tag,
+      color: matched?.color || getTagBindColor(tag),
+    }
+  })
+}
+
+const buildTagFilterEchoText = (
+  availableTagFilters: TagFilterOption[],
+  mode: TagFilterMode,
+) => {
+  if (availableTagFilters.length === 0) {
+    return '当前周期暂无可选标签'
+  }
+
+  if (mode === 'none') {
+    return '未选择标签'
+  }
+
+  return ''
+}
+
+const buildStatsView = (
+  range: StatsRange,
+  periodAnchor: number,
+  tagFilterMode: TagFilterMode = 'all',
+  selectedTagKeys: string[] = [],
+) => {
+  const rangeRecords = filterRecordsByRange(getCompletedRecords(), range, periodAnchor)
+  const availableTagFilters = buildAvailableTagFilters(rangeRecords)
+  const records = filterByTagSelection(rangeRecords, tagFilterMode, selectedTagKeys)
+  const timedCount = records.filter((record) => record.completionMode === 'timed').length
+  const plansInRange = filterByTagSelection(filterPlansByRange(getPlans(), range, periodAnchor), tagFilterMode, selectedTagKeys)
+  const completedPlanCount = plansInRange.filter((plan) => plan.status === 'completed').length
+  const totalPlanCount = plansInRange.length
+  const totalMinutes = records.reduce((total, record) => total + (record.actualMinutes || 0), 0)
+
+  const tagMinutesMap = buildTagMinutesMap(records)
 
   const tagEntries = Object.entries(tagMinutesMap)
     .map(([tag, minutes]) => ({ tag, minutes }))
@@ -221,6 +377,7 @@ const buildStatsView = (range: StatsRange, periodAnchor: number) => {
   const tagStats: TagStatView[] = tagEntries.map((item) => ({
     tag: item.tag,
     time: formatFocusMinutes(item.minutes),
+    minutes: item.minutes,
     percent: Math.round((item.minutes / maxMinutes) * 100),
     color: getTagColor(item.tag, tagOrder),
   }))
@@ -228,18 +385,20 @@ const buildStatsView = (range: StatsRange, periodAnchor: number) => {
   const tagPieLegend: TagPieLegendView[] = tagEntries.map((item) => ({
     tag: item.tag,
     time: formatFocusMinutes(item.minutes),
+    minutes: item.minutes,
     share: totalMinutes > 0 ? `${Math.round((item.minutes / totalMinutes) * 100)}%` : '0%',
     color: getTagColor(item.tag, tagOrder),
   }))
 
   const cards: StatsCard[] = [
-    { label: '总专注', value: formatFocusMinutes(totalMinutes) },
-    { label: '计划 完成数/总数', value: `${completedPlanCount}/${totalPlanCount}` },
-    { label: '计时完成数', value: `${timedCount}` },
+    { label: '总专注', value: formatFocusMinutes(totalMinutes), icon: '/images/icons/stats-focus.svg' },
+    { label: '计划完成/总数', value: `${completedPlanCount}/${totalPlanCount}`, icon: '/images/icons/stats-calendar.svg' },
+    { label: '计划完成数', value: `${timedCount}`, icon: '/images/icons/stats-trophy.svg' },
   ]
 
   const rangeOption = RANGE_OPTIONS.find((item) => item.key === range)
   const isCurrentPeriod = isSamePeriod(range, periodAnchor, Date.now())
+  const isTagFilterRestricted = tagFilterMode !== 'all'
 
   return {
     rangeLabel: rangeOption?.label || '每周',
@@ -250,6 +409,7 @@ const buildStatsView = (range: StatsRange, periodAnchor: number) => {
     canGoNextPeriod: !isCurrentPeriod,
     cards,
     totalFocus: formatFocusMinutes(totalMinutes),
+    totalMinutes,
     tagStats,
     tagPieStyle: buildPieStyle(
       tagPieLegend.map((item) => ({
@@ -259,8 +419,33 @@ const buildStatsView = (range: StatsRange, periodAnchor: number) => {
     ),
     tagPieLegend,
     hasTagStats: tagStats.length > 0,
+    availableTagFilters,
+    tagFilterMode,
+    selectedTagKeys,
+    tagFilterItems: buildTagFilterItems(availableTagFilters, tagFilterMode, selectedTagKeys),
+    selectedTagEcho: buildSelectedTagEcho(availableTagFilters, tagFilterMode, selectedTagKeys),
+    tagFilterEchoText: buildTagFilterEchoText(availableTagFilters, tagFilterMode),
+    tagFilterToggleLabel: tagFilterMode === 'all' ? '取消全选' : '全选',
+    isTagFilterRestricted,
+    tagEmptyText: tagFilterMode === 'none'
+      ? '请至少选择一个标签'
+      : isTagFilterRestricted
+        ? '所选标签在当前周期暂无记录'
+        : '当前时间范围内还没有计时专注记录',
+    tagPieEmptyText: tagFilterMode === 'none'
+      ? '请至少选择一个标签'
+      : isTagFilterRestricted
+        ? '所选标签在当前周期暂无占比数据'
+        : '完成计时后这里会显示标签占比',
   }
 }
+
+const buildStatsPageData = (
+  range: StatsRange,
+  periodAnchor: number,
+  tagFilterMode: TagFilterMode,
+  selectedTagKeys: string[],
+) => buildStatsView(range, periodAnchor, tagFilterMode, selectedTagKeys)
 
 Component({
   data: {
@@ -276,10 +461,30 @@ Component({
     canGoNextPeriod: false,
     cards: [] as StatsCard[],
     totalFocus: '0m',
+    totalMinutes: 0,
     tagStats: [] as TagStatView[],
+    displayTagStats: [] as TagStatDisplayView[],
     tagPieStyle: 'background: #e8f0e8;',
+    displayTagPieStyle: 'background: #e8f0e8;',
     tagPieLegend: [] as TagPieLegendView[],
+    displayTagPieLegend: [] as TagPieLegendDisplayView[],
+    displayTotalFocus: '0m',
+    statsSectionsVisible: false,
     hasTagStats: false,
+    tagFilterMode: 'all' as TagFilterMode,
+    selectedTagKeys: [] as string[],
+    availableTagFilters: [] as TagFilterOption[],
+    tagFilterItems: [] as TagFilterItem[],
+    selectedTagEcho: [] as TagEchoItem[],
+    tagFilterEchoText: '',
+    tagFilterToggleLabel: '取消全选',
+    showTagEchoFadeLeft: false,
+    showTagEchoFadeRight: false,
+    isTagFilterSheetVisible: false,
+    isTagFilterSheetClosing: false,
+    isTagFilterRestricted: false,
+    tagEmptyText: '当前时间范围内还没有计时专注记录',
+    tagPieEmptyText: '完成计时后这里会显示标签占比',
     pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
@@ -289,6 +494,9 @@ Component({
       this.setData({ safeTopPx: statusBarHeight + gapPx })
       this.refreshStats()
     },
+    detached() {
+      this.cancelStatsAnimation()
+    },
   },
   pageLifetimes: {
     show() {
@@ -297,8 +505,114 @@ Component({
     },
   },
   methods: {
+    cancelStatsAnimation() {
+      ;(this as WechatMiniprogram.IAnyObject).statsAnimToken =
+        ((this as WechatMiniprogram.IAnyObject).statsAnimToken || 0) + 1
+    },
+    runStatsIntroAnimation(
+      tagStats: TagStatView[],
+      tagPieLegend: TagPieLegendView[],
+      totalMinutes: number,
+    ) {
+      this.cancelStatsAnimation()
+      const token = (this as WechatMiniprogram.IAnyObject).statsAnimToken as number
+      const startedAt = Date.now()
+      const shares = tagPieLegend.map((item) => ({
+        color: item.color,
+        share: totalMinutes > 0 ? Number.parseFloat(item.share) : 0,
+      }))
+
+      const resetDisplay = {
+        displayTagStats: tagStats.map((item) => ({
+          ...item,
+          animPercent: 0,
+          animTime: '0m',
+        })),
+        displayTotalFocus: '0m',
+        displayTagPieStyle: 'background: #e8f0e8;',
+        displayTagPieLegend: tagPieLegend.map((item) => ({
+          ...item,
+          animShare: '0%',
+          animTime: '0m',
+        })),
+        statsSectionsVisible: false,
+      }
+
+      const step = () => {
+        if (token !== (this as WechatMiniprogram.IAnyObject).statsAnimToken) {
+          return
+        }
+
+        const progress = easeOutCubic(Math.min(1, (Date.now() - startedAt) / STATS_INTRO_MS))
+
+        this.setData({
+          statsSectionsVisible: progress > 0.04,
+          displayTagStats: tagStats.map((item) => ({
+            ...item,
+            animPercent: Math.max(0, Math.round(item.percent * progress)),
+            animTime: formatFocusMinutes(Math.round(item.minutes * progress)),
+          })),
+          displayTotalFocus: formatFocusMinutes(Math.round(totalMinutes * progress)),
+          displayTagPieStyle: buildPieStyle(
+            shares.map((item) => ({
+              color: item.color,
+              share: item.share * progress,
+            })),
+          ),
+          displayTagPieLegend: tagPieLegend.map((item) => ({
+            ...item,
+            animShare:
+              totalMinutes > 0
+                ? `${Math.round(Number.parseFloat(item.share) * progress)}%`
+                : '0%',
+            animTime: formatFocusMinutes(Math.round(item.minutes * progress)),
+          })),
+        })
+
+        if (progress < 1) {
+          setTimeout(step, 16)
+        }
+      }
+
+      this.setData(resetDisplay, () => {
+        setTimeout(step, 16)
+      })
+    },
+    applyStatsData(patch: ReturnType<typeof buildStatsPageData>) {
+      this.cancelStatsAnimation()
+
+      const { tagStats, tagPieLegend, totalMinutes, hasTagStats, ...rest } = patch
+
+      this.setData({
+        ...rest,
+        tagStats,
+        tagPieLegend,
+        totalMinutes,
+        hasTagStats,
+      })
+
+      if (!hasTagStats) {
+        this.setData({
+          displayTagStats: [],
+          displayTagPieLegend: [],
+          displayTagPieStyle: patch.tagPieStyle,
+          displayTotalFocus: patch.totalFocus,
+          statsSectionsVisible: true,
+        })
+        return
+      }
+
+      this.runStatsIntroAnimation(tagStats, tagPieLegend, totalMinutes)
+    },
     refreshStats() {
-      this.setData(buildStatsView(this.data.statsRange, this.data.periodAnchor))
+      const { statsRange, periodAnchor, tagFilterMode, selectedTagKeys } = this.data
+      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.updateTagEchoScrollFades()
+    },
+    applyTagFilterState(tagFilterMode: TagFilterMode, selectedTagKeys: string[]) {
+      const { statsRange, periodAnchor } = this.data
+      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.updateTagEchoScrollFades()
     },
     switchStatsRange(e: WechatMiniprogram.BaseEvent) {
       const range = e.currentTarget.dataset.range as StatsRange | undefined
@@ -307,12 +621,14 @@ Component({
       }
 
       const periodAnchor = Date.now()
+      const { tagFilterMode, selectedTagKeys } = this.data
 
       this.setData({
         statsRange: range,
         periodAnchor,
-        ...buildStatsView(range, periodAnchor),
       })
+      this.applyStatsData(buildStatsPageData(range, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.updateTagEchoScrollFades()
     },
     changePeriod(e: WechatMiniprogram.BaseEvent) {
       const offset = Number(e.currentTarget.dataset.offset)
@@ -325,11 +641,10 @@ Component({
       }
 
       const periodAnchor = shiftPeriodAnchor(this.data.periodAnchor, this.data.statsRange, offset)
+      const { statsRange, tagFilterMode, selectedTagKeys } = this.data
 
-      this.setData({
-        periodAnchor,
-        ...buildStatsView(this.data.statsRange, periodAnchor),
-      })
+      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.updateTagEchoScrollFades()
     },
     goToCurrentPeriod() {
       if (this.data.isCurrentPeriod) {
@@ -337,11 +652,81 @@ Component({
       }
 
       const periodAnchor = Date.now()
+      const { statsRange, tagFilterMode, selectedTagKeys } = this.data
 
-      this.setData({
-        periodAnchor,
-        ...buildStatsView(this.data.statsRange, periodAnchor),
+      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.updateTagEchoScrollFades()
+    },
+    toggleSelectAllTags() {
+      if (this.data.tagFilterMode === 'all') {
+        this.applyTagFilterState('none', [])
+        return
+      }
+
+      this.applyTagFilterState('all', [])
+    },
+    toggleTagFilter(e: WechatMiniprogram.BaseEvent) {
+      const tag = e.currentTarget.dataset.tag as string | undefined
+      if (!tag) {
+        return
+      }
+
+      const availableTags = this.data.availableTagFilters.map((item) => item.tag)
+      const checkedTags = getCheckedTags(availableTags, this.data.tagFilterMode, this.data.selectedTagKeys)
+      const isChecked = checkedTags.includes(tag)
+
+      let nextCheckedTags: string[]
+      if (isChecked) {
+        nextCheckedTags = checkedTags.filter((item) => item !== tag)
+      } else {
+        nextCheckedTags = [...checkedTags, tag]
+      }
+
+      if (nextCheckedTags.length === 0) {
+        this.applyTagFilterState('none', [])
+        return
+      }
+
+      if (nextCheckedTags.length === availableTags.length) {
+        this.applyTagFilterState('all', [])
+        return
+      }
+
+      this.applyTagFilterState('custom', nextCheckedTags)
+    },
+    openTagFilterSheet() {
+      openModal(this, 'isTagFilterSheetVisible', 'isTagFilterSheetClosing')
+    },
+    closeTagFilterSheet() {
+      dismissModal(this, 'isTagFilterSheetVisible', 'isTagFilterSheetClosing')
+    },
+    updateTagEchoScrollFades(scrollLeft = 0) {
+      wx.nextTick(() => {
+        const query = wx.createSelectorQuery().in(this)
+        query.select('.stats-tag-echo-scroll').boundingClientRect()
+        query.select('.stats-tag-echo-list').boundingClientRect()
+        query.exec((res) => {
+          const viewportWidth = res[0]?.width || 0
+          const listWidth = res[1]?.width || 0
+          ;(this as WechatMiniprogram.IAnyObject).tagEchoScrollViewportWidth = viewportWidth
+          const fades = getScrollFadeState(scrollLeft, listWidth, viewportWidth)
+          this.setData({
+            showTagEchoFadeLeft: fades.showLeft,
+            showTagEchoFadeRight: fades.showRight,
+          })
+        })
       })
     },
+    onTagEchoScroll(e: WechatMiniprogram.ScrollViewScroll) {
+      const { scrollLeft, scrollWidth } = e.detail
+      const viewportWidth = (this as WechatMiniprogram.IAnyObject).tagEchoScrollViewportWidth || 0
+      const fades = getScrollFadeState(scrollLeft, scrollWidth, viewportWidth)
+
+      this.setData({
+        showTagEchoFadeLeft: fades.showLeft,
+        showTagEchoFadeRight: fades.showRight,
+      })
+    },
+    noop() {},
   },
 })

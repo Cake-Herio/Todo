@@ -8,10 +8,7 @@
       <view wx:else class="avatar">{{profileInitial}}</view>
       <view>
         <view class="profile-name">{{profileName}}</view>
-        <view class="muted">{{profileHint}}</view>
-        <view class="muted">邀请码：{{inviteCode}}</view>
-        <view class="muted">云状态：{{cloudStatusText}}</view>
-        <view wx:if="{{sharedSpaceId}}" class="muted">空间：{{sharedSpaceId}}</view>
+        <view wx:if="{{activeRoomName}}" class="muted">当前房间：{{activeRoomName}}</view>
       </view>
     </view>
 
@@ -24,38 +21,285 @@
         <text class="arrow">›</text>
       </view>
     </view>
+  </view>
 
-    <view wx:if="{{isLoggedIn}}" class="settings-logout card">
-      <view class="settings-item settings-item-logout" bindtap="onLogoutTap">
-        <view>
-          <view class="item-label item-label-danger">退出登录</view>
-          <view class="muted">清除当前账号，回到首页登录</view>
+  <view wx:if="{{isFontSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isFontSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="closeFontPickerSheet" catchtouchmove="noop">
+    <view class="plan-picker-sheet panel-slide {{isFontSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
+      <view class="plan-picker-sheet-header font-sheet-header">
+        <text class="plan-picker-sheet-title">选择字体</text>
+      </view>
+
+      <view class="font-sheet-options">
+        <view
+          wx:for="{{fontOptions}}"
+          wx:key="key"
+          class="font-sheet-option {{fontPreference === item.key ? 'active' : ''}}"
+          data-key="{{item.key}}"
+          catchtap="onFontOptionTap"
+        >
+          <view class="font-sheet-option-main">
+            <view class="font-sheet-option-label" style="font-family: {{item.previewFamily}};">{{item.label}}</view>
+            <view class="font-sheet-option-desc">{{item.desc}}</view>
+          </view>
+          <text wx:if="{{fontPreference === item.key}}" class="font-sheet-check">✓</text>
         </view>
-        <text class="arrow">›</text>
       </view>
     </view>
   </view>
-</view>
 
-<view wx:if="{{isFontSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isFontSheetClosing ? 'is-closing' : ''}}" catchtap="closeFontPickerSheet" catchtouchmove="noop">
-  <view class="plan-picker-sheet panel-slide {{isFontSheetClosing ? 'is-closing' : ''}}" catchtap="noop">
-    <view class="plan-picker-sheet-header font-sheet-header">
-      <text class="plan-picker-sheet-title">选择字体</text>
-    </view>
+  <view wx:if="{{isActivitySmithSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isActivitySmithSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="closeActivitySmithSheet" catchtouchmove="noop">
+    <view class="plan-picker-sheet panel-slide {{isActivitySmithSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
+      <view class="plan-picker-sheet-header font-sheet-header">
+        <text class="plan-picker-sheet-title">灵动岛 (ActivitySmith)</text>
+      </view>
 
-    <view class="font-sheet-options">
-      <view
-        wx:for="{{fontOptions}}"
-        wx:key="key"
-        class="font-sheet-option {{fontPreference === item.key ? 'active' : ''}}"
-        data-key="{{item.key}}"
-        catchtap="onFontOptionTap"
-      >
-        <view class="font-sheet-option-main">
-          <view class="font-sheet-option-label" style="font-family: {{item.previewFamily}};">{{item.label}}</view>
-          <view class="font-sheet-option-desc">{{item.desc}}</view>
+      <view class="activitysmith-sheet-body">
+        <view class="activitysmith-toggle-row">
+          <view class="activitysmith-toggle-copy">
+            <view class="item-label">开启专注同步</view>
+            <view class="muted">开始 / 暂停 / 完成时推送到灵动岛</view>
+          </view>
+          <switch
+            class="activitysmith-switch"
+            checked="{{activitySmithEnabled}}"
+            color="#7FB592"
+            bindchange="onActivitySmithSwitchChange"
+          />
         </view>
-        <text wx:if="{{fontPreference === item.key}}" class="font-sheet-check">✓</text>
+
+        <view class="activitysmith-key-section">
+          <view class="item-label">ActivitySmith API Key</view>
+          <view class="muted activitysmith-key-hint">在 ActivitySmith App 中创建后粘贴保存，仅保存在云端</view>
+          <view class="activitysmith-key-row">
+            <input
+              class="activitysmith-key-input"
+              type="text"
+              password
+              value="{{activitySmithApiKeyInput}}"
+              placeholder="ask_..."
+              bindinput="onActivitySmithApiKeyInput"
+            />
+            <view class="activitysmith-save-btn" catchtap="onSaveActivitySmithApiKey">保存 Key</view>
+          </view>
+          <view wx:if="{{activitySmithKeyConfigured}}" class="activitysmith-key-masked">已保存：{{activitySmithKeyMasked}}</view>
+        </view>
+
+        <view class="activitysmith-steps">
+          <view class="activitysmith-step activitysmith-step-link" catchtap="onOpenActivitySmithAppStore">
+            1. 点击前往 <text class="activitysmith-link">App Store</text> 安装 ActivitySmith，并完成设备配对
+          </view>
+          <view class="activitysmith-step">2. 在 ActivitySmith 中创建 API Key</view>
+          <view class="activitysmith-step">3. 在上方输入框粘贴并保存 API Key</view>
+          <view class="activitysmith-step">4. 开启开关并开始专注后，灵动岛由云端定时推送</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{isBarkSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isBarkSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="closeBarkSheet" catchtouchmove="noop">
+    <view class="plan-picker-sheet panel-slide {{isBarkSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
+      <view class="plan-picker-sheet-header font-sheet-header">
+        <text class="plan-picker-sheet-title">Bark 推送</text>
+      </view>
+
+      <view class="activitysmith-sheet-body">
+        <view class="activitysmith-toggle-row">
+          <view class="activitysmith-toggle-copy">
+            <view class="item-label">开启 Bark 推送</view>
+            <view class="muted">计划提前提醒 + 专注每 15 分钟推送</view>
+          </view>
+          <switch
+            class="activitysmith-switch"
+            checked="{{barkEnabled}}"
+            color="#7FB592"
+            bindchange="onBarkSwitchChange"
+          />
+        </view>
+
+        <view class="activitysmith-key-section">
+          <view class="item-label">Bark Device Key</view>
+          <view class="muted activitysmith-key-hint">可粘贴完整链接（如 https://api.day.app/xxx/）或仅 Key，仅保存在云端</view>
+          <view class="activitysmith-key-row">
+            <input
+              class="activitysmith-key-input"
+              type="text"
+              password
+              value="{{barkDeviceKeyInput}}"
+              placeholder="https://api.day.app/..."
+              bindinput="onBarkDeviceKeyInput"
+            />
+            <view class="activitysmith-save-btn" catchtap="onSaveBarkDeviceKey">保存 Key</view>
+          </view>
+          <view wx:if="{{barkKeyConfigured}}" class="activitysmith-key-masked">已保存：{{barkKeyMasked}}</view>
+        </view>
+
+        <view class="activitysmith-steps">
+          <view class="activitysmith-step activitysmith-step-link" catchtap="onOpenBarkAppStore">
+            1. 点击前往 <text class="activitysmith-link">App Store</text> 安装 Bark
+          </view>
+          <view class="activitysmith-step">2. 打开 Bark，复制首页推送地址或 Key</view>
+          <view class="activitysmith-step">3. 在上方输入框粘贴并保存 Key</view>
+          <view class="activitysmith-step">4. 开启开关；精准计划会提前 10/1 分钟提醒，专注每 15 分钟推送</view>
+          <view class="activitysmith-step">5. 计划提醒需已加入共享空间且计划已同步到云</view>
+          <view class="activitysmith-step">6. 推送配图已放在云存储 myforest-bark-push.png，无需升级公网权限</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{isSharedSpaceSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isSharedSpaceSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="closeSharedSpaceSheet" catchtouchmove="noop">
+    <view class="plan-picker-sheet panel-slide {{isSharedSpaceSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
+      <view class="plan-picker-sheet-header font-sheet-header">
+        <text class="plan-picker-sheet-title">共享空间</text>
+      </view>
+
+      <view wx:if="{{sharedSpaceView === 'main'}}" class="shared-space-sheet-body">
+        <view wx:if="{{ownedRooms.length || joinedRooms.length}}" class="shared-space-room-section">
+          <view wx:if="{{ownedRooms.length}}" class="shared-space-room-group">
+            <view class="shared-space-room-group-title">我创建的</view>
+            <view
+              wx:for="{{ownedRooms}}"
+              wx:key="sharedSpaceId"
+              class="shared-space-room-item {{item.isActive ? 'is-active' : ''}}"
+            >
+              <view
+                class="shared-space-room-main"
+                data-space-id="{{item.sharedSpaceId}}"
+                data-active="{{item.isActive}}"
+                catchtap="onRoomTap"
+              >
+                <view class="shared-space-room-name">{{item.roomName}}</view>
+                <view class="muted">{{item.memberCount}} 人</view>
+              </view>
+              <view class="shared-space-room-side">
+                <text wx:if="{{item.isActive}}" class="shared-space-room-badge">当前</text>
+                <text
+                  wx:else
+                  class="shared-space-room-action"
+                  data-space-id="{{item.sharedSpaceId}}"
+                  data-active="{{item.isActive}}"
+                  catchtap="onRoomTap"
+                >切换</text>
+                <view
+                  class="shared-space-room-icon-btn"
+                  data-invite-code="{{item.inviteCode}}"
+                  catchtap="onCopyRoomInviteCode"
+                >
+                  <image class="shared-space-room-icon" src="/images/icons/share.svg" mode="aspectFit"></image>
+                </view>
+                <view
+                  class="shared-space-room-icon-btn"
+                  data-space-id="{{item.sharedSpaceId}}"
+                  data-room-name="{{item.roomName}}"
+                  catchtap="onDeleteRoomTap"
+                >
+                  <image class="shared-space-room-icon" src="/images/icons/delete.svg" mode="aspectFit"></image>
+                </view>
+              </view>
+            </view>
+          </view>
+
+          <view wx:if="{{joinedRooms.length}}" class="shared-space-room-group">
+            <view class="shared-space-room-group-title">我加入的</view>
+            <view
+              wx:for="{{joinedRooms}}"
+              wx:key="sharedSpaceId"
+              class="shared-space-room-item {{item.isActive ? 'is-active' : ''}}"
+            >
+              <view
+                class="shared-space-room-main"
+                data-space-id="{{item.sharedSpaceId}}"
+                data-active="{{item.isActive}}"
+                catchtap="onRoomTap"
+              >
+                <view class="shared-space-room-name">{{item.roomName}}</view>
+                <view class="muted">{{item.memberCount}} 人</view>
+              </view>
+              <view class="shared-space-room-side">
+                <text wx:if="{{item.isActive}}" class="shared-space-room-badge">当前</text>
+                <text
+                  wx:else
+                  class="shared-space-room-action"
+                  data-space-id="{{item.sharedSpaceId}}"
+                  data-active="{{item.isActive}}"
+                  catchtap="onRoomTap"
+                >切换</text>
+                <view
+                  class="shared-space-room-icon-btn"
+                  data-invite-code="{{item.inviteCode}}"
+                  catchtap="onCopyRoomInviteCode"
+                >
+                  <image class="shared-space-room-icon" src="/images/icons/share.svg" mode="aspectFit"></image>
+                </view>
+                <view
+                  class="shared-space-room-icon-btn"
+                  data-space-id="{{item.sharedSpaceId}}"
+                  data-room-name="{{item.roomName}}"
+                  catchtap="onLeaveRoomTap"
+                >
+                  <image class="shared-space-room-icon" src="/images/icons/delete.svg" mode="aspectFit"></image>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:else class="shared-space-empty muted">还没有房间，可新建或输入邀请码加入</view>
+
+        <view class="shared-space-actions">
+          <view class="shared-space-action-btn shared-space-action-btn-primary" catchtap="onSharedSpaceCreateTap">新建房间</view>
+          <view class="shared-space-action-btn" catchtap="onSharedSpaceJoinTap">加入房间</view>
+        </view>
+      </view>
+
+      <view wx:elif="{{sharedSpaceView === 'create'}}" class="shared-space-sheet-body">
+        <view class="shared-space-join-panel">
+          <view class="item-label">房间名称</view>
+          <view class="muted shared-space-create-hint">给房间起一个名字，便于区分</view>
+          <view class="shared-space-join-row">
+            <input
+              class="activitysmith-key-input shared-space-join-input"
+              type="text"
+              value="{{createRoomNameInput}}"
+              placeholder="例如 周末学习"
+              maxlength="20"
+              bindinput="onCreateRoomNameInput"
+            />
+            <view class="activitysmith-save-btn shared-space-join-confirm" catchtap="onConfirmCreateRoom">确认</view>
+          </view>
+        </view>
+      </view>
+
+      <view wx:elif="{{sharedSpaceView === 'createResult'}}" class="shared-space-sheet-body">
+        <view class="shared-space-create-result">
+          <view class="item-label">「{{createdRoomName}}」已创建</view>
+          <view class="muted shared-space-create-hint">邀请码（分享给伙伴加入，最多 3 人）</view>
+          <view class="shared-space-code-row">
+            <text class="shared-space-code-text">{{createdInviteCode}}</text>
+            <view class="shared-space-copy-btn" catchtap="onCopyInviteCode">
+              <image class="shared-space-copy-icon" src="/images/icons/share.svg" mode="aspectFit"></image>
+            </view>
+          </view>
+          <view class="shared-space-action-btn shared-space-action-btn-primary shared-space-done-btn" catchtap="onSharedSpaceCreateDone">完成</view>
+        </view>
+      </view>
+
+      <view wx:else class="shared-space-sheet-body">
+        <view class="shared-space-join-panel">
+          <view class="item-label">输入邀请码</view>
+          <view class="muted shared-space-create-hint">粘贴伙伴分享的 8 位邀请码</view>
+          <view class="shared-space-join-row">
+            <input
+              class="activitysmith-key-input shared-space-join-input"
+              type="text"
+              value="{{joinInviteCodeInput}}"
+              placeholder="例如 ABCD2345"
+              maxlength="16"
+              bindinput="onJoinInviteCodeInput"
+            />
+            <view class="activitysmith-save-btn shared-space-join-confirm" catchtap="onConfirmJoinRoom">确认</view>
+          </view>
+        </view>
       </view>
     </view>
   </view>

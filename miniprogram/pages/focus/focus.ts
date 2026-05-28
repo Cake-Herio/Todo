@@ -5,7 +5,17 @@ import {
   saveTimedCompletion,
   type Plan,
 } from '../../utils/data'
-import { canPublishFocusPresence, clearFocusPresence, publishFocusPresence } from '../../utils/focus-presence'
+import {
+  endActivitySmithSession,
+  isActivitySmithEnabled,
+  registerActivitySmithSession,
+} from '../../utils/activitysmith'
+import {
+  endBarkFocusSession,
+  isBarkEnabled,
+  registerBarkFocusSession,
+} from '../../utils/bark'
+import { canPublishFocusPresence, clearFocusPresence, fetchOwnFocusPresence, publishFocusPresence } from '../../utils/focus-presence'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
 import { addPlanTagOption, getPlanTagNames } from '../../utils/plan-tags'
@@ -106,12 +116,13 @@ const MORPH_DURATION_MS = 780
 
 Component({
   timer: 0 as number,
-  focusPresenceTick: 0,
   leavingFocus: false,
   focusStartedAt: 0,
   accumulatedElapsedMs: 0,
   focusSegmentStartedAt: 0,
+  activitySmithSyncedMinute: -1,
   tagScrollViewportWidth: 0,
+  idleTagScrollViewportWidth: 0,
   planScrollViewportWidth: 0,
   data: {
     safeTopPx: 0,
@@ -128,7 +139,7 @@ Component({
     isShortFocusConfirmVisible: false,
     isShortFocusConfirmClosing: false,
     linkedPlanId: '',
-    selectedTag: '英语',
+    selectedTag: '',
     detail: '',
     tags: getPlanTagNames(),
     isTagCreateVisible: false,
@@ -138,11 +149,16 @@ Component({
     bindablePlans: [] as BindablePlanView[],
     showTagScrollFadeLeft: false,
     showTagScrollFadeRight: false,
+    showIdleTagScrollFadeLeft: false,
+    showIdleTagScrollFadeRight: false,
     showPlanScrollFadeLeft: false,
     showPlanScrollFadeRight: false,
     pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
+    attached() {
+      this.updateIdleTagScrollFades()
+    },
     detached() {
       this.stopTick()
       unlockFocusPage()
@@ -151,8 +167,16 @@ Component({
   pageLifetimes: {
     show() {
       refreshPageFontStyle(this)
+      if (this.data.controlsPhase === 'idle') {
+        this.setData({ tags: getPlanTagNames() })
+        this.updateIdleTagScrollFades()
+      }
+
       if (this.data.isRunning && !this.data.isPaused) {
         this.refreshElapsedDisplay()
+        if (!this.timer) {
+          this.startTick()
+        }
       }
 
       if (this.data.isRunning && !this.data.canLeave) {
@@ -183,6 +207,16 @@ Component({
     },
     refreshElapsedDisplay() {
       const elapsedSeconds = this.getElapsedSeconds()
+      const elapsedMinutes = Math.floor(elapsedSeconds / 60)
+
+      if (
+        isActivitySmithEnabled() &&
+        this.data.isRunning &&
+        elapsedMinutes !== this.activitySmithSyncedMinute
+      ) {
+        this.activitySmithSyncedMinute = elapsedMinutes
+        this.syncActivitySmithPresence()
+      }
 
       this.setData({
         elapsedSeconds,
@@ -214,6 +248,12 @@ Component({
           })
         }
       }
+
+      if (options?.resume === '1' || canPublishFocusPresence()) {
+        void this.tryRestoreFocusSession()
+      }
+
+      this.updateIdleTagScrollFades()
     },
     initPageInsets() {
       const { statusBarHeight = 0, windowWidth = 375 } = wx.getSystemInfoSync()
@@ -280,18 +320,114 @@ Component({
         },
       })
     },
+    getFocusPresencePayload() {
+      return {
+        sessionStartedAt: this.focusStartedAt,
+        accumulatedSeconds: Math.floor(this.accumulatedElapsedMs / 1000),
+        segmentStartedAt: this.data.isPaused ? 0 : this.focusSegmentStartedAt,
+        isPaused: this.data.isPaused,
+      }
+    },
+    getActivitySmithSessionPayload() {
+      return {
+        ...this.getFocusPresencePayload(),
+        tag: this.data.selectedTag,
+        detail: this.data.detail,
+      }
+    },
+    getBarkSessionPayload() {
+      return {
+        ...this.getFocusPresencePayload(),
+        tag: this.data.selectedTag,
+        detail: this.data.detail,
+      }
+    },
     syncFocusPresence() {
-      if (!canPublishFocusPresence() || !this.data.isRunning) {
+      if (!this.data.isRunning) {
         return
       }
 
-      void publishFocusPresence({
+      if (canPublishFocusPresence()) {
+        void publishFocusPresence(this.getFocusPresencePayload())
+      }
+
+      this.syncActivitySmithPresence()
+      this.syncBarkFocusSession()
+    },
+    syncActivitySmithPresence() {
+      if (!isActivitySmithEnabled() || !this.data.isRunning) {
+        return
+      }
+
+      void registerActivitySmithSession(this.getActivitySmithSessionPayload())
+    },
+    syncBarkFocusSession() {
+      if (!isBarkEnabled() || !this.data.isRunning) {
+        return
+      }
+
+      if (!`${this.data.selectedTag || ''}`.trim()) {
+        return
+      }
+
+      void registerBarkFocusSession(this.getBarkSessionPayload())
+    },
+    clearActivitySmithPresence(elapsedSeconds?: number) {
+      if (!isActivitySmithEnabled()) {
+        return
+      }
+
+      void endActivitySmithSession({
+        accumulatedSeconds: elapsedSeconds ?? this.getElapsedSeconds(),
         tag: this.data.selectedTag,
         detail: this.data.detail,
-        startedAt: this.focusStartedAt,
-        isPaused: this.data.isPaused,
-        elapsedSeconds: this.getElapsedSeconds(),
       })
+    },
+    clearBarkFocusSession() {
+      if (!isBarkEnabled()) {
+        return
+      }
+
+      void endBarkFocusSession()
+    },
+    async tryRestoreFocusSession() {
+      if (this.data.isRunning) {
+        return
+      }
+
+      try {
+        const ownFocus = await fetchOwnFocusPresence()
+        if (!ownFocus) {
+          return
+        }
+
+        const { restore } = ownFocus
+        this.stopTick()
+        this.leavingFocus = false
+        this.focusStartedAt = restore.sessionStartedAt
+        this.accumulatedElapsedMs = restore.accumulatedSeconds * 1000
+        this.focusSegmentStartedAt = restore.isPaused ? 0 : restore.segmentStartedAt || Date.now()
+        lockFocusPage()
+
+        this.setData({
+          controlsPhase: 'active',
+          backGuardShow: true,
+          canLeave: false,
+          isRunning: true,
+          isPaused: restore.isPaused,
+          hintText: getHintText(true, restore.isPaused),
+        })
+
+        this.refreshElapsedDisplay()
+
+        if (!restore.isPaused) {
+          this.startTick()
+        }
+
+        this.syncFocusPresence()
+      } catch (error) {
+        console.warn('[focus] restore session failed', error)
+      }
     },
     startTimer() {
       if (this.data.controlsPhase !== 'idle') {
@@ -303,7 +439,7 @@ Component({
       this.focusStartedAt = Date.now()
       this.accumulatedElapsedMs = 0
       this.focusSegmentStartedAt = 0
-      this.focusPresenceTick = 0
+      this.activitySmithSyncedMinute = -1
       lockFocusPage()
 
       this.setData({
@@ -385,6 +521,8 @@ Component({
       this.stopTick()
       unlockFocusPage()
       void clearFocusPresence()
+      this.clearActivitySmithPresence(elapsedSeconds)
+      this.clearBarkFocusSession()
 
       const focusCompletedAt = Date.now()
       const bindablePlans = getBindablePlansForToday('me').map(toBindablePlanView)
@@ -422,6 +560,37 @@ Component({
       })
       this.updateTagScrollFades()
       this.updatePlanScrollFades()
+    },
+    updateIdleTagScrollFades(scrollLeft = 0) {
+      if (this.data.controlsPhase !== 'idle') {
+        return
+      }
+
+      wx.nextTick(() => {
+        const query = wx.createSelectorQuery().in(this)
+        query.select('.focus-idle-tag-scroll').boundingClientRect()
+        query.select('.focus-idle-tag-list').boundingClientRect()
+        query.exec((res) => {
+          const viewportWidth = res[0]?.width || 0
+          const listWidth = res[1]?.width || 0
+          this.idleTagScrollViewportWidth = viewportWidth
+          const fades = getScrollFadeState(scrollLeft, listWidth, viewportWidth)
+          this.setData({
+            showIdleTagScrollFadeLeft: fades.showLeft,
+            showIdleTagScrollFadeRight: fades.showRight,
+          })
+        })
+      })
+    },
+    onIdleTagScroll(e: WechatMiniprogram.ScrollViewScroll) {
+      const { scrollLeft, scrollWidth } = e.detail
+      const viewportWidth = this.idleTagScrollViewportWidth || 0
+      const fades = getScrollFadeState(scrollLeft, scrollWidth, viewportWidth)
+
+      this.setData({
+        showIdleTagScrollFadeLeft: fades.showLeft,
+        showIdleTagScrollFadeRight: fades.showRight,
+      })
     },
     updateTagScrollFades(scrollLeft = 0) {
       wx.nextTick(() => {
@@ -482,12 +651,7 @@ Component({
       this.refreshElapsedDisplay()
 
       this.timer = setInterval(() => {
-        this.focusPresenceTick += 1
         this.refreshElapsedDisplay()
-
-        if (this.focusPresenceTick % 30 === 0) {
-          this.syncFocusPresence()
-        }
       }, 1000) as unknown as number
     },
     stopTick() {
@@ -499,8 +663,10 @@ Component({
       this.timer = 0
     },
     selectTag(e: WechatMiniprogram.BaseEvent) {
+      const tag = e.currentTarget.dataset.tag as string
+
       this.setData({
-        selectedTag: e.currentTarget.dataset.tag,
+        selectedTag: this.data.selectedTag === tag ? '' : tag,
       })
     },
     openTagCreateSheet() {
@@ -513,9 +679,9 @@ Component({
         isTagCreateVisible: false,
       })
     },
-    onTagCreateConfirm(e: WechatMiniprogram.CustomEvent<{ name: string; color: string }>) {
+    async onTagCreateConfirm(e: WechatMiniprogram.CustomEvent<{ name: string; color: string }>) {
       const { name, color } = e.detail
-      const result = addPlanTagOption(name, color)
+      const result = await addPlanTagOption(name, color, 'private')
 
       if (!result.ok) {
         wx.showToast({
@@ -537,6 +703,7 @@ Component({
         icon: 'success',
       })
       this.updateTagScrollFades()
+      this.updateIdleTagScrollFades()
     },
     onDetailInput(e: WechatMiniprogram.Input) {
       this.setData({
@@ -588,6 +755,8 @@ Component({
           this.stopTick()
           unlockFocusPage()
           void clearFocusPresence()
+          this.clearActivitySmithPresence()
+          this.clearBarkFocusSession()
           this.setData({
             canLeave: true,
             isRunning: false,

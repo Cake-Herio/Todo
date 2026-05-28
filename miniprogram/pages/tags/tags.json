@@ -4,6 +4,8 @@
   "backgroundColorTop": "#EBF5EF",
   "usingComponents": {
     "font-page-meta": "/components/font-page-meta/font-page-meta",
-    "navigation-bar": "/components/navigation-bar/navigation-bar"
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "tag-create-sheet": "/components/tag-create-sheet/tag-create-sheet",
+    "plan-tag-pill": "/components/plan-tag-pill/plan-tag-pill"
   }
 }

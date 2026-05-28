@@ -1,0 +1,96 @@
+<font-page-meta id="font-page-meta" />
+<view class="focus-records-page-shell" style="{{pageFontStyle}}">
+  <navigation-bar title="计时记录" color="#2F3A34" background="transparent"></navigation-bar>
+
+  <scroll-view
+    class="scroll-page focus-records-scroll"
+    scroll-y
+    type="list"
+    lower-threshold="120"
+    bindscrolltolower="loadMoreRecords"
+  >
+    <view class="page focus-records-page">
+      <view class="focus-records-intro muted">仅展示你的专注计时记录</view>
+
+      <view class="records-view-switch-wrap">
+        <view class="records-view-switch">
+          <view class="records-view-switch-thumb {{showAll ? '' : 'is-right'}}"></view>
+          <view
+            class="records-view-switch-item {{showAll ? 'active' : ''}}"
+            bindtap="showAllRecords"
+          >
+            全部
+          </view>
+          <view
+            class="records-view-switch-item {{!showAll ? 'active' : ''}}"
+            bindtap="showDateRecords"
+          >
+            按日期
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{!showAll}}" class="records-period-nav">
+        <button class="period-button prev" data-offset="-1" bindtap="changeDate">‹</button>
+        <view class="period-main" bindtap="openDatePicker">
+          <view class="period-title">{{dateTitle}}</view>
+          <view class="muted period-hint">{{periodHint}}</view>
+        </view>
+        <button class="period-button next {{canGoNextDate ? '' : 'disabled'}}" data-offset="1" bindtap="changeDate">›</button>
+      </view>
+
+      <view wx:if="{{summaryText}}" class="summary-card card">
+        <view class="summary-text">{{summaryText}}</view>
+      </view>
+
+      <view wx:if="{{records.length}}" class="record-list">
+        <view wx:for="{{records}}" wx:key="id" class="record-card card">
+          <view class="record-card-meta">
+            <view class="record-card-meta-start">
+              <plan-tag-pill name="{{item.tag}}" size="sm" />
+              <view class="record-time-pill">{{item.timeRange}}</view>
+              <text wx:if="{{item.showDateLabel}}" class="record-date">{{item.dateLabel}}</text>
+            </view>
+            <view class="record-duration-pill">{{item.durationText}}</view>
+          </view>
+          <view wx:if="{{item.detail}}" class="record-detail muted">{{item.detail}}</view>
+        </view>
+      </view>
+
+      <view wx:else class="records-empty card muted">{{emptyText}}</view>
+
+      <view wx:if="{{loadMoreText}}" class="load-more-text muted">{{loadMoreText}}</view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{isPickerSheetVisible}}" class="plan-picker-sheet-mask mask-fade {{isPickerSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="closePickerSheet" catchtouchmove="noop">
+    <view class="plan-picker-sheet panel-slide {{isPickerSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
+      <view class="plan-picker-sheet-header font-sheet-header">
+        <text class="plan-picker-sheet-title">选择日期</text>
+      </view>
+
+      <picker-view
+        class="plan-picker-wheel"
+        style="{{pageFontStyle}}"
+        value="{{pickerTempValue}}"
+        bindchange="onPickerSheetChange"
+        indicator-class="plan-picker-indicator"
+      >
+        <picker-view-column>
+          <view wx:for="{{pickerYears}}" wx:key="*this" class="plan-picker-option">{{item}}年</view>
+        </picker-view-column>
+        <picker-view-column>
+          <view wx:for="{{pickerMonths}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+        </picker-view-column>
+        <picker-view-column>
+          <view wx:for="{{pickerDayOptions}}" wx:key="*this" class="plan-picker-option">{{item}}</view>
+        </picker-view-column>
+      </picker-view>
+
+      <view class="picker-sheet-actions">
+        <button class="picker-sheet-cancel secondary-button" bindtap="closePickerSheet">取消</button>
+        <button class="picker-sheet-confirm primary-button" bindtap="confirmPickerSheet">确定</button>
+      </view>
+    </view>
+  </view>
+</view>
