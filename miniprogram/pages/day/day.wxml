@@ -7,7 +7,7 @@
       <view class="schedule-card-meta">
         <image class="schedule-card-avatar {{plan.color}}" src="{{plan.ownerAvatarUrl}}" mode="aspectFill"></image>
         <plan-tag-pill name="{{plan.tag}}" size="{{isCompact ? 'xs-compact' : 'xs'}}" />
-        <text wx:if="{{showStatus && plan.status && plan.status !== '已完成'}}" class="schedule-card-status {{plan.status === '逾期' ? 'overdue' : ''}}">{{plan.status}}</text>
+        <text wx:if="{{showStatus && plan.status && plan.status !== '已完成' && plan.status !== '待开始'}}" class="schedule-card-status {{plan.status === '逾期' ? 'overdue' : ''}}">{{plan.status}}</text>
       </view>
       <view wx:if="{{plan.remark}}" class="schedule-card-remark">{{plan.remark}}</view>
     </view>

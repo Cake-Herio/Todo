@@ -10,9 +10,11 @@ import {
   parseVoicePlanCommandWithDeepSeek,
   refineVoiceCommandWithDeepSeek,
   type AiPlanDraft,
+  type AiPlanError,
   type AiDraftRefineSnapshot,
   type AiConfirmRefineSnapshot,
 } from '../../utils/deepseek'
+import { validateBatchSchedule } from '../../utils/plan-schedule-validate'
 import {
   buildAiPlanContext,
   hasBatchOperations,
@@ -54,6 +56,13 @@ const speechManager = WechatSI.getRecordRecognitionManager()
 type VoiceLiveTextComponent = WechatMiniprogram.Component.TrivialInstance & {
   reset: () => void
   updateText: (text: string) => void
+}
+
+interface AiChatMessage {
+  id: string
+  role: 'user' | 'assistant' | 'error'
+  text: string
+  at: number
 }
 
 interface AiDraftEntry {
@@ -251,6 +260,7 @@ const syncAllConfirmCards = (
 }
 
 const resetAiConfirmState = () => ({
+  aiChatMessages: [] as AiChatMessage[],
   aiConfirmWarnings: [] as string[],
   aiConfirmCards: [] as AiConfirmCardView[],
   aiDeletePlanIds: [] as string[],
@@ -374,6 +384,7 @@ Component({
     isAiDraftClosing: false,
     isAiDraftEditVisible: false,
     editingDraftId: '',
+    aiChatMessages: [] as AiChatMessage[],
     aiDraftSourceText: '',
     aiDraftEntries: [] as AiDraftEntry[],
     aiConfirmCards: [] as AiConfirmCardView[],
@@ -886,9 +897,69 @@ Component({
       sourceText: string,
       warnings: string[],
       resolved: ReturnType<typeof resolveBatchConfirmState>,
+      dsErrors: AiPlanError[],
       options?: { merge?: boolean },
     ) {
       const incomingEntries = batchDraftsToEntries(resolved.drafts)
+
+      // --- client-side schedule validation ---
+      const createsForValidate = incomingEntries.map((e) => ({
+        ownerKey: e.ownerKey,
+        label: resolvePlanTag(e.plan.defaultTag || e.plan.section),
+        date: e.plan.date,
+        startTime: e.plan.startTime,
+        endTime: e.plan.endTime,
+      }))
+
+      const updatesForValidate = resolved.updatePayloads.map((u) => ({
+        planId: u.planId,
+        ownerKey: u.ownerKey,
+        label: u.tag,
+        date: u.date,
+        startTime: u.startTime || null,
+        endTime: u.endTime || null,
+      }))
+
+      const localResult = validateBatchSchedule({
+        creates: createsForValidate,
+        updates: updatesForValidate,
+      })
+
+      const allErrors = [...dsErrors, ...localResult.errors]
+
+      // --- filter creates by local validation ---
+      const validIdx = new Set(localResult.validCreateIndices)
+      const filteredEntries = validIdx.size === incomingEntries.length
+        ? incomingEntries
+        : incomingEntries.filter((_, i) => validIdx.has(i))
+
+      // --- filter updates by local validation ---
+      const validUpIdx = new Set(localResult.validUpdateIndices)
+      const filteredUpdates = validUpIdx.size === resolved.updatePayloads.length
+        ? resolved.updatePayloads
+        : resolved.updatePayloads.filter((_, i) => validUpIdx.has(i))
+
+      // --- build chat messages ---
+      const now = Date.now()
+      const newMessages: AiChatMessage[] = []
+      newMessages.push({ id: `user-${now}`, role: 'user', text: sourceText, at: now })
+
+      const hasOps = filteredEntries.length > 0 || resolved.deletePlanIds.length > 0 || filteredUpdates.length > 0
+      if (hasOps) {
+        const parts: string[] = []
+        if (filteredEntries.length) parts.push(`${filteredEntries.length} 条新增`)
+        if (filteredUpdates.length) parts.push(`${filteredUpdates.length} 条修改`)
+        if (resolved.deletePlanIds.length) parts.push(`${resolved.deletePlanIds.length} 条删除`)
+        newMessages.push({ id: `asst-${now}`, role: 'assistant', text: `已识别 ${parts.join('、')}`, at: now + 1 })
+      }
+
+      for (const err of allErrors) {
+        newMessages.push({ id: `err-${now}-${err.code}`, role: 'error', text: err.message, at: now + 2 })
+      }
+
+      const chatMessages = options?.merge
+        ? [...this.data.aiChatMessages, ...newMessages]
+        : newMessages
 
       if (options?.merge && this.data.isAiDraftVisible) {
         const merged = mergeBatchConfirmState(
@@ -897,26 +968,28 @@ Component({
             deletePlanIds: this.data.aiDeletePlanIds,
             updatePayloads: this.data.aiUpdatePayloads,
           },
-          resolved,
+          { ...resolved, updatePayloads: filteredUpdates },
         )
-        const entries = [...this.data.aiDraftEntries, ...incomingEntries]
+        const entries = [...this.data.aiDraftEntries, ...filteredEntries]
 
         openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
           isAiDraftEditVisible: false,
           editingDraftId: '',
           aiDraftSourceText: sourceText,
+          aiChatMessages: chatMessages,
           ...applyResolvedBatch(entries, merged.deletePlanIds, merged.updatePayloads),
-          aiConfirmWarnings: [...this.data.aiConfirmWarnings, ...warnings],
+          aiConfirmWarnings: warnings,
         })
         return
       }
 
       openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
         ...resetAiConfirmState(),
+        aiChatMessages: chatMessages,
         isAiDraftEditVisible: false,
         editingDraftId: '',
         aiDraftSourceText: sourceText,
-        ...applyResolvedBatch(incomingEntries, resolved.deletePlanIds, resolved.updatePayloads),
+        ...applyResolvedBatch(filteredEntries, resolved.deletePlanIds, filteredUpdates),
         aiConfirmWarnings: warnings,
       })
     },
@@ -944,9 +1017,10 @@ Component({
       parseVoicePlanCommandWithDeepSeek(sourceText, today, getPlanTagNames(), contextItems)
         .then((batch) => {
           const mergedWarnings = [...warnings, ...(batch.warnings || [])]
+          const dsErrors = batch.errors || []
           const resolved = resolveBatchConfirmState(batch, contextIds)
 
-          if (!hasBatchOperations(resolved)) {
+          if (!hasBatchOperations(resolved) && dsErrors.length === 0) {
             wx.showToast({
               title: mergedWarnings[0] || '没有识别到变更',
               icon: 'none',
@@ -954,7 +1028,7 @@ Component({
             return
           }
 
-          this.openConfirmFromBatch(batch.sourceText, mergedWarnings, resolved, {
+          this.openConfirmFromBatch(sourceText, mergedWarnings, resolved, dsErrors, {
             merge: options?.merge ?? this.data.isAiDraftVisible,
           })
         })
@@ -1013,9 +1087,10 @@ Component({
       )
         .then((batch) => {
           const warnings = [...(truncated ? ['相关计划较多，请尽量说明具体日期'] : []), ...(batch.warnings || [])]
+          const dsErrors = batch.errors || []
           const resolved = resolveBatchConfirmState(batch, contextIds)
 
-          if (!hasBatchOperations(resolved)) {
+          if (!hasBatchOperations(resolved) && dsErrors.length === 0) {
             this.setData({ voiceMode: 'create' })
             wx.showToast({
               title: warnings[0] || '没有识别到调整',
@@ -1024,15 +1099,12 @@ Component({
             return
           }
 
-          const entries = batchDraftsToEntries(resolved.drafts)
+          const now = Date.now()
+          const userMsg: AiChatMessage = { id: `user-${now}`, role: 'user', text: supplementText, at: now }
+          const chatMessages = [...this.data.aiChatMessages, userMsg]
 
-          openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
-            isAiDraftEditVisible: false,
-            editingDraftId: '',
-            aiDraftSourceText: batch.sourceText,
-            ...applyResolvedBatch(entries, resolved.deletePlanIds, resolved.updatePayloads),
-            aiConfirmWarnings: warnings,
-            voiceMode: 'create',
+          this.setData({ aiChatMessages: chatMessages }, () => {
+            this.openConfirmFromBatch(batch.sourceText, warnings, resolved, dsErrors, { merge: false })
           })
         })
         .catch((error: Error) => {

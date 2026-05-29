@@ -317,3 +317,166 @@
     transform: translateY(0);
   }
 }
+
+.edit-record-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 130;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(47, 58, 52, 0.32);
+  animation: modalFadeIn 0.18s ease-out backwards;
+}
+
+.edit-record-panel {
+  width: 100%;
+  padding: 28rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
+  border-radius: 32rpx 32rpx 0 0;
+  background: #fffdf7;
+  box-sizing: border-box;
+  animation: modalSlideUp 0.22s ease-out backwards;
+}
+
+.edit-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24rpx;
+}
+
+.edit-record-title {
+  color: #2f3a34;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.edit-record-section {
+  margin-bottom: 22rpx;
+}
+
+.edit-record-label {
+  color: #7a857d;
+  font-size: 24rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.edit-record-tags-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.edit-record-h-fade {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 2;
+}
+
+.edit-record-h-fade.is-visible {
+  opacity: 1;
+}
+
+.edit-record-h-fade-left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 72rpx;
+  height: 52rpx;
+  background: linear-gradient(270deg, rgba(255, 253, 247, 0) 0%, #fffdf7 100%);
+}
+
+.edit-record-h-fade-right {
+  position: absolute;
+  top: 0;
+  width: 72rpx;
+  background: linear-gradient(90deg, rgba(255, 253, 247, 0) 0%, #fffdf7 100%);
+}
+
+.edit-record-tag-scroll {
+  flex: 1;
+  min-width: 0;
+  height: 52rpx;
+}
+
+.edit-record-tag-list {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 52rpx;
+  gap: 12rpx;
+  padding-right: 12rpx;
+  box-sizing: border-box;
+}
+
+.edit-record-tag-option {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.edit-record-tags-trail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 52rpx;
+  padding-left: 12rpx;
+  background: #fffdf7;
+  z-index: 2;
+}
+
+.edit-record-tags-trail .edit-record-h-fade-right {
+  left: -72rpx;
+  height: 52rpx;
+}
+
+.edit-record-tag-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 72rpx;
+  width: 72rpx;
+  height: 48rpx;
+  border-radius: 999rpx;
+  background: #f4f0e8;
+  color: #7FB592;
+  font-size: 32rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.edit-record-textarea {
+  width: 100%;
+  height: 100rpx;
+  max-height: 200rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 18rpx;
+  background: #f7f3ea;
+  color: #2f3a34;
+  font-size: 26rpx;
+  line-height: 1.5;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.edit-record-actions {
+  margin-top: 28rpx;
+  padding-top: 28rpx;
+  border-top: 2rpx solid #E4F2E9;
+}
+
+.edit-record-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 82rpx;
+  border-radius: 999rpx;
+  background: rgba(217, 101, 101, 0.08);
+  color: #D96565;
+  font-size: 28rpx;
+  font-weight: 700;
+}

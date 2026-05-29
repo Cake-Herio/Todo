@@ -30,6 +30,7 @@ interface TagStatView {
 interface TagStatDisplayView extends TagStatView {
   animPercent: number
   animTime: string
+  _rk: string
 }
 
 interface TagPieLegendView {
@@ -63,6 +64,18 @@ interface TagEchoItem {
   color: string
 }
 
+interface BarSegment {
+  tag: string
+  minutes: number
+  color: string
+}
+
+interface BarBucket {
+  label: string
+  totalMinutes: number
+  segments: BarSegment[]
+}
+
 const RANGE_OPTIONS: StatsRangeOption[] = [
   { key: 'day', label: '每日' },
   { key: 'week', label: '每周' },
@@ -70,9 +83,7 @@ const RANGE_OPTIONS: StatsRangeOption[] = [
   { key: 'year', label: '每年' },
 ]
 
-const TAG_COLORS = ['#98C6A8', '#7DA7D9', '#F1B86A', '#D98BB0', '#9B8DD9', '#8BC4D9', '#E09A7A', '#7BC8B8']
-
-const STATS_INTRO_MS = 720
+const STATS_INTRO_MS = 900
 
 const easeOutCubic = (value: number) => 1 - (1 - value) ** 3
 
@@ -258,11 +269,6 @@ const filterByTagSelection = <T extends { tag: string }>(
   return items.filter((item) => selectedTagKeys.includes(item.tag))
 }
 
-const getTagColor = (tag: string, tagOrder: string[]) => {
-  const index = tagOrder.indexOf(tag)
-  return TAG_COLORS[(index >= 0 ? index : 0) % TAG_COLORS.length]
-}
-
 const buildPieStyle = (items: Array<{ color: string; share: number }>) => {
   if (!items.length) {
     return 'background: #e8f0e8;'
@@ -350,6 +356,75 @@ const buildTagFilterEchoText = (
   return ''
 }
 
+const WEEK_LABELS = ['一', '二', '三', '四', '五', '六', '日']
+
+const getBarUnitLabel = (range: StatsRange): string => {
+  if (range === 'day') return '单位：时'
+  if (range === 'month') return '单位：日'
+  if (range === 'year') return '单位：月'
+  return ''
+}
+
+const buildBarBuckets = (records: CompletedRecord[], range: StatsRange): BarBucket[] => {
+  if (records.length === 0) return []
+
+  const numBuckets = range === 'day' ? 12 : range === 'week' ? 7 : range === 'month' ? 10 : 12
+  const bucketTagMaps: Array<Record<string, number>> = Array.from({ length: numBuckets }, () => ({}))
+
+  let daysInMonth = 30
+  if (range === 'month') {
+    const anchor = new Date(records[0].completedAt)
+    daysInMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate()
+  }
+
+  for (const r of records) {
+    const minutes = r.actualMinutes || 0
+    if (minutes <= 0) continue
+
+    let idx: number
+    if (range === 'day') {
+      idx = Math.min(Math.floor(new Date(r.completedAt).getHours() / 2), 11)
+    } else if (range === 'week') {
+      const d = new Date(r.completedAt).getDay()
+      idx = d === 0 ? 6 : d - 1
+    } else if (range === 'month') {
+      idx = Math.min(Math.floor((new Date(r.completedAt).getDate() - 1) * numBuckets / daysInMonth), numBuckets - 1)
+    } else {
+      idx = new Date(r.completedAt).getMonth()
+    }
+
+    bucketTagMaps[idx][r.tag] = (bucketTagMaps[idx][r.tag] || 0) + minutes
+  }
+
+  const buckets: BarBucket[] = []
+  for (let i = 0; i < numBuckets; i++) {
+    const segments = Object.entries(bucketTagMaps[i])
+      .map(([tag, minutes]) => ({ tag, minutes, color: getTagBindColor(tag) }))
+      .sort((a, b) => a.minutes - b.minutes)
+
+    let label: string
+    if (range === 'day') {
+      label = `${i * 2}`
+    } else if (range === 'week') {
+      label = WEEK_LABELS[i]
+    } else if (range === 'month') {
+      const s = Math.floor(i * daysInMonth / numBuckets) + 1
+      const e = Math.floor((i + 1) * daysInMonth / numBuckets)
+      label = `${s}-${e}`
+    } else {
+      label = `${i + 1}`
+    }
+
+    buckets.push({
+      label,
+      totalMinutes: segments.reduce((s, seg) => s + seg.minutes, 0),
+      segments,
+    })
+  }
+
+  return buckets
+}
+
 const buildStatsView = (
   range: StatsRange,
   periodAnchor: number,
@@ -371,7 +446,6 @@ const buildStatsView = (
     .map(([tag, minutes]) => ({ tag, minutes }))
     .sort((a, b) => b.minutes - a.minutes)
 
-  const tagOrder = tagEntries.map((item) => item.tag)
   const maxMinutes = Math.max(...tagEntries.map((item) => item.minutes), 1)
 
   const tagStats: TagStatView[] = tagEntries.map((item) => ({
@@ -379,7 +453,7 @@ const buildStatsView = (
     time: formatFocusMinutes(item.minutes),
     minutes: item.minutes,
     percent: Math.round((item.minutes / maxMinutes) * 100),
-    color: getTagColor(item.tag, tagOrder),
+    color: getTagBindColor(item.tag),
   }))
 
   const tagPieLegend: TagPieLegendView[] = tagEntries.map((item) => ({
@@ -387,14 +461,19 @@ const buildStatsView = (
     time: formatFocusMinutes(item.minutes),
     minutes: item.minutes,
     share: totalMinutes > 0 ? `${Math.round((item.minutes / totalMinutes) * 100)}%` : '0%',
-    color: getTagColor(item.tag, tagOrder),
+    color: getTagBindColor(item.tag),
   }))
 
   const cards: StatsCard[] = [
     { label: '总专注', value: formatFocusMinutes(totalMinutes), icon: '/images/icons/stats-focus.svg' },
     { label: '计划完成/总数', value: `${completedPlanCount}/${totalPlanCount}`, icon: '/images/icons/stats-calendar.svg' },
-    { label: '计划完成数', value: `${timedCount}`, icon: '/images/icons/stats-trophy.svg' },
+    { label: '计时次数', value: `${timedCount}`, icon: '/images/icons/stats-trophy.svg' },
   ]
+
+  const barBuckets = buildBarBuckets(records, range)
+  const barMaxMinutes = Math.max(...barBuckets.map((b) => b.totalMinutes), 1)
+  const hasBarData = barBuckets.some((b) => b.totalMinutes > 0)
+  const barUnitLabel = getBarUnitLabel(range)
 
   const rangeOption = RANGE_OPTIONS.find((item) => item.key === range)
   const isCurrentPeriod = isSamePeriod(range, periodAnchor, Date.now())
@@ -419,6 +498,10 @@ const buildStatsView = (
     ),
     tagPieLegend,
     hasTagStats: tagStats.length > 0,
+    barBuckets,
+    barMaxMinutes,
+    barUnitLabel,
+    hasBarData,
     availableTagFilters,
     tagFilterMode,
     selectedTagKeys,
@@ -437,6 +520,11 @@ const buildStatsView = (
       : isTagFilterRestricted
         ? '所选标签在当前周期暂无占比数据'
         : '完成计时后这里会显示标签占比',
+    tagBarEmptyText: tagFilterMode === 'none'
+      ? '请至少选择一个标签'
+      : isTagFilterRestricted
+        ? '所选标签在当前周期暂无柱状图数据'
+        : '完成计时后这里会显示时段分布',
   }
 }
 
@@ -445,7 +533,10 @@ const buildStatsPageData = (
   periodAnchor: number,
   tagFilterMode: TagFilterMode,
   selectedTagKeys: string[],
-) => buildStatsView(range, periodAnchor, tagFilterMode, selectedTagKeys)
+) => {
+  const view = buildStatsView(range, periodAnchor, tagFilterMode, selectedTagKeys)
+  return view
+}
 
 Component({
   data: {
@@ -469,7 +560,6 @@ Component({
     tagPieLegend: [] as TagPieLegendView[],
     displayTagPieLegend: [] as TagPieLegendDisplayView[],
     displayTotalFocus: '0m',
-    statsSectionsVisible: false,
     hasTagStats: false,
     tagFilterMode: 'all' as TagFilterMode,
     selectedTagKeys: [] as string[],
@@ -485,6 +575,12 @@ Component({
     isTagFilterRestricted: false,
     tagEmptyText: '当前时间范围内还没有计时专注记录',
     tagPieEmptyText: '完成计时后这里会显示标签占比',
+    tagBarEmptyText: '完成计时后这里会显示时段分布',
+    barBuckets: [] as BarBucket[],
+    barMaxMinutes: 0,
+    barUnitLabel: '',
+    hasBarData: false,
+    tagChartView: 'pie' as 'pie' | 'bar',
     pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
@@ -509,6 +605,209 @@ Component({
       ;(this as WechatMiniprogram.IAnyObject).statsAnimToken =
         ((this as WechatMiniprogram.IAnyObject).statsAnimToken || 0) + 1
     },
+    initBarCanvas(buckets: BarBucket[], maxMinutes: number, hasData: boolean) {
+      const query = this.createSelectorQuery()
+      query.select('#bar-canvas').fields({ node: true, size: true }).exec((res) => {
+        if (!res[0] || !res[0].node) return
+        const canvas = res[0].node as any
+        const ctx = canvas.getContext('2d')
+        const dpr = wx.getSystemInfoSync().pixelRatio
+        const w = res[0].width as number
+        const h = res[0].height as number
+        if (w <= 0 || h <= 0) return
+        canvas.width = w * dpr
+        canvas.height = h * dpr
+        ctx.scale(dpr, dpr)
+
+        const token = (this as WechatMiniprogram.IAnyObject).statsAnimToken as number
+        const unitLabel = this.data.barUnitLabel as string
+
+        const padTop = 14; const padBottom = 34; const padLeft = 44; const padRight = 14
+        const chartW = w - padLeft - padRight
+        const chartH = h - padTop - padBottom
+        const barCount = buckets.length
+        if (barCount === 0) {
+          ctx.fillStyle = '#7a857d'
+          ctx.font = '13px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(this.data.tagBarEmptyText || '暂无数据', w / 2, h / 2)
+          return
+        }
+        const barGap = 6
+        const barW = (chartW - barGap * (barCount - 1)) / barCount
+        const labelFontSize = barCount >= 12 ? 9 : 10
+
+        const niceMaxForAxis = (max: number): number => {
+          if (max <= 0) return 60
+          const mag = 10 ** Math.floor(Math.log10(max))
+          const n = max / mag
+          if (n <= 1) return mag
+          if (n <= 2) return 2 * mag
+          if (n <= 5) return 5 * mag
+          return 10 * mag
+        }
+
+        const formatTickMinutes = (m: number): string => {
+          if (m <= 0) return '0'
+          if (m < 60) return `${Math.round(m)}m`
+          const hours = Math.floor(m / 60)
+          const rest = Math.round(m % 60)
+          if (rest === 0) return `${hours}h`
+          return `${hours}h${rest}m`
+        }
+
+        const yMax = niceMaxForAxis(maxMinutes)
+        const tickCount = 4
+        const tickInterval = yMax / tickCount
+        const yAxisX = padLeft - 1
+
+        const drawBarFrame = (progress: number) => {
+          ctx.clearRect(0, 0, w, h)
+
+          // --- Y-axis gridlines + labels ---
+          for (let t = 0; t <= tickCount; t++) {
+            const val = t * tickInterval
+            const y = padTop + chartH - (val / yMax) * chartH
+
+            ctx.beginPath()
+            ctx.moveTo(padLeft, y)
+            ctx.lineTo(w - padRight, y)
+            ctx.strokeStyle = '#E4F2E9'
+            ctx.lineWidth = 1
+            ctx.stroke()
+
+            ctx.fillStyle = '#9aa89e'
+            ctx.font = '10px sans-serif'
+            ctx.textAlign = 'right'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(formatTickMinutes(val), padLeft - 6, y)
+          }
+
+          // Y-axis vertical line
+          ctx.beginPath()
+          ctx.moveTo(yAxisX, padTop)
+          ctx.lineTo(yAxisX, padTop + chartH)
+          ctx.strokeStyle = '#C8D4CC'
+          ctx.lineWidth = 1
+          ctx.stroke()
+
+          // --- empty state ---
+          if (!hasData || maxMinutes <= 0) {
+            ctx.fillStyle = '#7a857d'
+            ctx.font = '13px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(this.data.tagBarEmptyText || '暂无数据', padLeft + chartW / 2, padTop + chartH / 2)
+            return
+          }
+
+          // --- stacked bars ---
+          for (let i = 0; i < buckets.length; i++) {
+            const bucket = buckets[i]
+            const x = padLeft + i * (barW + barGap)
+
+            let segY = padTop + chartH
+            for (const seg of bucket.segments) {
+              const segH = Math.max(0, (seg.minutes / yMax) * chartH * progress)
+              if (segH > 0.5) {
+                ctx.fillStyle = seg.color
+                ctx.fillRect(x, segY - segH, barW, segH)
+              }
+              segY -= segH
+            }
+
+            // X-axis label
+            if (bucket.label) {
+              ctx.fillStyle = '#7a857d'
+              ctx.font = `${labelFontSize}px sans-serif`
+              ctx.textAlign = 'center'
+              ctx.textBaseline = 'top'
+              ctx.fillText(bucket.label, x + barW / 2, padTop + chartH + 6)
+            }
+          }
+
+          // X-axis unit label
+          if (unitLabel) {
+            ctx.fillStyle = '#9aa89e'
+            ctx.font = '9px sans-serif'
+            ctx.textAlign = 'right'
+            ctx.textBaseline = 'top'
+            ctx.fillText(unitLabel, w - padRight, padTop + chartH + 20)
+          }
+        }
+
+        drawBarFrame(0)
+        const animStartedAt = Date.now()
+        const BAR_ANIM_MS = 960
+
+        const step = () => {
+          if (token !== (this as WechatMiniprogram.IAnyObject).statsAnimToken) return
+          const t = Math.min(1, (Date.now() - animStartedAt) / BAR_ANIM_MS)
+          drawBarFrame(easeOutCubic(t))
+          if (t < 1) canvas.requestAnimationFrame(step)
+        }
+        canvas.requestAnimationFrame(step)
+      })
+    },
+    onTagChartSwiperChange(e: WechatMiniprogram.SwiperChange) {
+      const current = e.detail.current
+      const view = current === 1 ? 'bar' : 'pie'
+      this.setData({ tagChartView: view })
+
+      if (view === 'bar') {
+        const { barBuckets, barMaxMinutes, hasBarData } = this.data
+        wx.nextTick(() => {
+          this.initBarCanvas(barBuckets, barMaxMinutes, hasBarData)
+        })
+      }
+    },
+    drawEmptyPieRing() {
+      const query = this.createSelectorQuery()
+      query.select('#pie-canvas').fields({ node: true, size: true }).exec((res) => {
+        if (!res[0] || !res[0].node) return
+        const canvas = res[0].node as any
+        const ctx = canvas.getContext('2d')
+        const dpr = wx.getSystemInfoSync().pixelRatio
+        const w = res[0].width as number
+        const h = res[0].height as number
+        canvas.width = w * dpr
+        canvas.height = h * dpr
+        ctx.scale(dpr, dpr)
+
+        const ringDiameter = Math.min(w * 0.42, h * 0.88)
+        const ringCX = ringDiameter / 2 + 10
+        const ringCY = h / 2
+        const outerR = ringDiameter / 2 - 2
+        const innerR = outerR * 0.58
+        const arcR = (outerR + innerR) / 2
+        const lineW = outerR - innerR
+
+        ctx.clearRect(0, 0, w, h)
+
+        ctx.beginPath()
+        ctx.arc(ringCX, ringCY, arcR, 0, 2 * Math.PI)
+        ctx.strokeStyle = '#E4F2E9'
+        ctx.lineWidth = lineW
+        ctx.lineCap = 'butt'
+        ctx.stroke()
+
+        const centerR = innerR - 2
+        ctx.beginPath()
+        ctx.arc(ringCX, ringCY, centerR, 0, 2 * Math.PI)
+        ctx.fillStyle = '#fffdf7'
+        ctx.fill()
+
+        ctx.fillStyle = '#2f3a34'
+        ctx.font = `bold ${Math.round(lineW * 0.55)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('0m', ringCX, ringCY - Math.round(lineW * 0.10))
+        ctx.fillStyle = '#7a857d'
+        ctx.font = `${Math.round(lineW * 0.34)}px sans-serif`
+        ctx.fillText('总专注', ringCX, ringCY + Math.round(lineW * 0.36))
+      })
+    },
     runStatsIntroAnimation(
       tagStats: TagStatView[],
       tagPieLegend: TagPieLegendView[],
@@ -516,72 +815,243 @@ Component({
     ) {
       this.cancelStatsAnimation()
       const token = (this as WechatMiniprogram.IAnyObject).statsAnimToken as number
-      const startedAt = Date.now()
       const shares = tagPieLegend.map((item) => ({
         color: item.color,
         share: totalMinutes > 0 ? Number.parseFloat(item.share) : 0,
       }))
 
+      const rk = (i: number) => `${i}-${token}`
+
       const resetDisplay = {
-        displayTagStats: tagStats.map((item) => ({
+        displayTagStats: tagStats.map((item, i) => ({
           ...item,
           animPercent: 0,
           animTime: '0m',
+          _rk: rk(i),
         })),
-        displayTotalFocus: '0m',
-        displayTagPieStyle: 'background: #e8f0e8;',
-        displayTagPieLegend: tagPieLegend.map((item) => ({
-          ...item,
-          animShare: '0%',
-          animTime: '0m',
-        })),
-        statsSectionsVisible: false,
       }
 
-      const step = () => {
-        if (token !== (this as WechatMiniprogram.IAnyObject).statsAnimToken) {
-          return
-        }
-
-        const progress = easeOutCubic(Math.min(1, (Date.now() - startedAt) / STATS_INTRO_MS))
-
-        this.setData({
-          statsSectionsVisible: progress > 0.04,
-          displayTagStats: tagStats.map((item) => ({
-            ...item,
-            animPercent: Math.max(0, Math.round(item.percent * progress)),
-            animTime: formatFocusMinutes(Math.round(item.minutes * progress)),
-          })),
-          displayTotalFocus: formatFocusMinutes(Math.round(totalMinutes * progress)),
-          displayTagPieStyle: buildPieStyle(
-            shares.map((item) => ({
-              color: item.color,
-              share: item.share * progress,
-            })),
-          ),
-          displayTagPieLegend: tagPieLegend.map((item) => ({
-            ...item,
-            animShare:
-              totalMinutes > 0
-                ? `${Math.round(Number.parseFloat(item.share) * progress)}%`
-                : '0%',
-            animTime: formatFocusMinutes(Math.round(item.minutes * progress)),
-          })),
-        })
-
-        if (progress < 1) {
-          setTimeout(step, 16)
-        }
+      const finalBars = {
+        displayTagStats: tagStats.map((item, i) => ({
+          ...item,
+          animPercent: item.percent,
+          animTime: item.time,
+          _rk: rk(i),
+        })),
       }
 
       this.setData(resetDisplay, () => {
-        setTimeout(step, 16)
+        const query = this.createSelectorQuery()
+        query.select('#pie-canvas').fields({ node: true, size: true }).exec((res) => {
+          if (!res[0] || !res[0].node) return
+          const canvas = res[0].node as any
+          const ctx = canvas.getContext('2d')
+          const dpr = wx.getSystemInfoSync().pixelRatio
+          const w = res[0].width as number
+          const h = res[0].height as number
+          canvas.width = w * dpr
+          canvas.height = h * dpr
+          ctx.scale(dpr, dpr)
+
+          // --- precompute layout (invariant per canvas size) ---
+          const ringPortion = 0.42
+          const ringDiameter = Math.min(w * ringPortion, h * 0.88)
+          const ringCX = ringDiameter / 2 + 10
+          const ringCY = h / 2
+          const outerR = ringDiameter / 2 - 2
+          const innerR = outerR * 0.58
+          const arcR = (outerR + innerR) / 2
+          const lineW = outerR - innerR
+          const centerR = innerR - 2
+          const fullCircle = 2 * Math.PI
+          const startAngle0 = -Math.PI / 2
+          const labelStartX = ringCX + ringDiameter / 2 + 28
+          const labelAreaWidth = w - labelStartX - 12
+          const fontSize = Math.max(11, Math.min(13, lineW * 0.55))
+          const pillPadY = 5
+          const pillH = fontSize + pillPadY * 2
+          const minGap = 4
+          const valueFontSize = Math.round(lineW * 0.55)
+          const subFontSize = Math.round(lineW * 0.34)
+          const valueYOff = Math.round(lineW * 0.10)
+          const subYOff = Math.round(lineW * 0.36)
+
+          // --- pre-measure pill text widths + time widths ---
+          ctx.font = `bold ${fontSize}px sans-serif`
+          const pillWidths: number[] = tagPieLegend.map((item) => ctx.measureText(item.tag).width)
+          ctx.font = `${fontSize}px sans-serif`
+          const preTimeWidths: number[] = tagPieLegend.map((item) => ctx.measureText(item.time).width)
+
+          const computeCalloutLayout = () => {
+            const segs: Array<{
+              midAngle: number; color: string; tag: string; time: string; timeW: number; anchorY: number; labelY: number; pillW: number
+            }> = []
+
+            let sa = startAngle0
+            for (let i = 0; i < shares.length; i++) {
+              const sweep = (shares[i].share / 100) * fullCircle
+              if (sweep <= 0.001) { sa += sweep; continue }
+              const mid = sa + sweep / 2
+              segs.push({
+                midAngle: mid,
+                color: shares[i].color,
+                tag: tagPieLegend[i].tag,
+                time: tagPieLegend[i].time,
+                timeW: preTimeWidths[i],
+                anchorY: ringCY + Math.sin(mid) * arcR,
+                labelY: 0,
+                pillW: pillWidths[i] + 16,
+              })
+              sa += sweep
+            }
+            if (segs.length === 0) return segs
+
+            segs.sort((a, b) => a.anchorY - b.anchorY)
+            for (let i = 0; i < segs.length; i++) segs[i].labelY = segs[i].anchorY
+            for (let i = 1; i < segs.length; i++) {
+              const prev = segs[i - 1]
+              const curr = segs[i]
+              const minY = prev.labelY + pillH / 2 + minGap + pillH / 2
+              if (curr.labelY < minY) curr.labelY = minY
+            }
+            return segs
+          }
+
+          const calloutSegs = shares.length > 0 ? computeCalloutLayout() : []
+
+          // --- draw function ---
+          const drawPieCard = (ringProgress: number, calloutProgress: number) => {
+            ctx.clearRect(0, 0, w, h)
+
+            // track
+            ctx.beginPath()
+            ctx.arc(ringCX, ringCY, arcR, 0, fullCircle)
+            ctx.strokeStyle = '#E4F2E9'
+            ctx.lineWidth = lineW
+            ctx.lineCap = 'butt'
+            ctx.stroke()
+
+            // center circle
+            ctx.beginPath()
+            ctx.arc(ringCX, ringCY, centerR, 0, fullCircle)
+            ctx.fillStyle = '#fffdf7'
+            ctx.fill()
+
+            // center text
+            const currentTotal = formatFocusMinutes(Math.round(totalMinutes * ringProgress))
+            ctx.fillStyle = '#2f3a34'
+            ctx.font = `bold ${valueFontSize}px sans-serif`
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(currentTotal, ringCX, ringCY - valueYOff)
+            ctx.fillStyle = '#7a857d'
+            ctx.font = `${subFontSize}px sans-serif`
+            ctx.fillText('总专注', ringCX, ringCY + subYOff)
+
+            if (shares.length === 0) return
+
+            // segments
+            let sa = startAngle0
+            for (let i = 0; i < shares.length; i++) {
+              let sweep = (shares[i].share / 100) * fullCircle * ringProgress
+              if (ringProgress >= 0.99 && i === shares.length - 1) {
+                const endAngle = startAngle0 + fullCircle
+                if (endAngle > sa + 0.001) sweep = endAngle - sa
+              }
+              if (sweep <= 0.001) { sa += sweep; continue }
+              ctx.beginPath()
+              ctx.arc(ringCX, ringCY, arcR, sa, sa + sweep)
+              ctx.strokeStyle = shares[i].color
+              ctx.lineWidth = lineW
+              ctx.lineCap = 'butt'
+              ctx.stroke()
+              sa += sweep
+            }
+
+            if (calloutProgress <= 0 || calloutSegs.length === 0) return
+
+            // guide lines
+            ctx.globalAlpha = Math.min(0.55, calloutProgress * 0.55)
+            ctx.setLineDash([4, 3])
+            for (const seg of calloutSegs) {
+              const ax = ringCX + Math.cos(seg.midAngle) * arcR
+              ctx.beginPath()
+              ctx.moveTo(ax, seg.anchorY)
+              ctx.lineTo(labelStartX, seg.labelY)
+              ctx.strokeStyle = '#C8D4CC'
+              ctx.lineWidth = 1
+              ctx.lineCap = 'round'
+              ctx.stroke()
+
+              ctx.beginPath()
+              ctx.arc(ax, seg.anchorY, 2.5, 0, fullCircle)
+              ctx.fillStyle = seg.color
+              ctx.fill()
+            }
+            ctx.setLineDash([])
+            ctx.globalAlpha = 1
+
+            // pills
+            const pillAlpha = calloutProgress
+            for (const seg of calloutSegs) {
+              ctx.globalAlpha = pillAlpha
+              const pillX = labelStartX
+              const pillY = seg.labelY - pillH / 2
+              const r = Math.min(7, pillH / 2)
+              ctx.beginPath()
+              ctx.moveTo(pillX + r, pillY)
+              ctx.lineTo(pillX + seg.pillW - r, pillY)
+              ctx.arcTo(pillX + seg.pillW, pillY, pillX + seg.pillW, pillY + r, r)
+              ctx.lineTo(pillX + seg.pillW, pillY + pillH - r)
+              ctx.arcTo(pillX + seg.pillW, pillY + pillH, pillX + seg.pillW - r, pillY + pillH, r)
+              ctx.lineTo(pillX + r, pillY + pillH)
+              ctx.arcTo(pillX, pillY + pillH, pillX, pillY + pillH - r, r)
+              ctx.lineTo(pillX, pillY + r)
+              ctx.arcTo(pillX, pillY, pillX + r, pillY, r)
+              ctx.closePath()
+              ctx.fillStyle = seg.color
+              ctx.fill()
+              ctx.fillStyle = '#FFFFFF'
+              ctx.textAlign = 'left'
+              ctx.textBaseline = 'middle'
+              ctx.fillText(seg.tag, pillX + 8, seg.labelY)
+
+              const timeX = pillX + seg.pillW + 8
+              const maxTimeW = labelAreaWidth - seg.pillW - 8
+              ctx.font = `${fontSize}px sans-serif`
+              ctx.fillStyle = '#6e7b71'
+              if (seg.timeW <= maxTimeW) {
+                ctx.fillText(seg.time, timeX, seg.labelY)
+              }
+            }
+            ctx.globalAlpha = 1
+          }
+
+          // --- trigger CSS bar animation (delayed 1 frame so reset renders first) ---
+          wx.nextTick(() => {
+            if (token !== (this as WechatMiniprogram.IAnyObject).statsAnimToken) return
+            this.setData(finalBars)
+          })
+
+          // --- start rAF loop (canvas only, startedAt set after frame 0 to avoid async gap) ---
+          drawPieCard(0, 0)
+          const animStartedAt = Date.now()
+          const step = () => {
+            if (token !== (this as WechatMiniprogram.IAnyObject).statsAnimToken) return
+            const t = Math.min(1, (Date.now() - animStartedAt) / STATS_INTRO_MS)
+            const ringProgress = easeOutCubic(Math.min(1, t / 0.7))
+            const calloutProgress = t > 0.7 ? easeOutCubic((t - 0.7) / 0.3) : 0
+            drawPieCard(ringProgress, calloutProgress)
+            if (t < 1) canvas.requestAnimationFrame(step)
+          }
+          canvas.requestAnimationFrame(step)
+        })
       })
     },
     applyStatsData(patch: ReturnType<typeof buildStatsPageData>) {
       this.cancelStatsAnimation()
 
-      const { tagStats, tagPieLegend, totalMinutes, hasTagStats, ...rest } = patch
+      const { tagStats, tagPieLegend, totalMinutes, hasTagStats, barBuckets, barMaxMinutes, hasBarData, ...rest } = patch
 
       this.setData({
         ...rest,
@@ -589,20 +1059,29 @@ Component({
         tagPieLegend,
         totalMinutes,
         hasTagStats,
+        barBuckets,
+        barMaxMinutes,
+        hasBarData,
+        displayTagStats: [],
       })
 
       if (!hasTagStats) {
         this.setData({
           displayTagStats: [],
-          displayTagPieLegend: [],
-          displayTagPieStyle: patch.tagPieStyle,
           displayTotalFocus: patch.totalFocus,
-          statsSectionsVisible: true,
+        }, () => {
+          this.drawEmptyPieRing()
         })
         return
       }
 
       this.runStatsIntroAnimation(tagStats, tagPieLegend, totalMinutes)
+
+      if (this.data.tagChartView === 'bar') {
+        wx.nextTick(() => {
+          this.initBarCanvas(barBuckets, barMaxMinutes, hasBarData)
+        })
+      }
     },
     refreshStats() {
       const { statsRange, periodAnchor, tagFilterMode, selectedTagKeys } = this.data
@@ -728,5 +1207,46 @@ Component({
       })
     },
     noop() {},
+    onSwipeStart(e: WechatMiniprogram.TouchEvent) {
+      const touch = e.touches[0]
+      ;(this as WechatMiniprogram.IAnyObject)._swipeStartX = touch.clientX
+      ;(this as WechatMiniprogram.IAnyObject)._swipeStartY = touch.clientY
+    },
+    onSwipeEnd(e: WechatMiniprogram.TouchEvent) {
+      const startX = (this as WechatMiniprogram.IAnyObject)._swipeStartX as number
+      const startY = (this as WechatMiniprogram.IAnyObject)._swipeStartY as number
+      if (startX === undefined) return
+
+      const touch = e.changedTouches[0]
+      const dx = touch.clientX - startX
+      const dy = touch.clientY - startY
+      const SWIPE_THRESHOLD = 50
+
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > SWIPE_THRESHOLD) {
+        const direction = dx < 0 ? 1 : -1
+        this.swipeToRange(direction)
+      }
+
+      ;(this as WechatMiniprogram.IAnyObject)._swipeStartX = undefined
+      ;(this as WechatMiniprogram.IAnyObject)._swipeStartY = undefined
+    },
+    swipeToRange(direction: number) {
+      const ranges: StatsRange[] = ['day', 'week', 'month', 'year']
+      const currentIndex = ranges.indexOf(this.data.statsRange)
+      const nextIndex = currentIndex + direction
+      if (nextIndex < 0 || nextIndex >= ranges.length) return
+
+      const nextRange = ranges[nextIndex]
+      const periodAnchor = Date.now()
+      const { tagFilterMode, selectedTagKeys } = this.data
+
+      this.setData({
+        statsRange: nextRange,
+        rangeIndex: nextIndex,
+        periodAnchor,
+      })
+      this.applyStatsData(buildStatsPageData(nextRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.updateTagEchoScrollFades()
+    },
   },
 })

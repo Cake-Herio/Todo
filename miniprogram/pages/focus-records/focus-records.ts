@@ -1,10 +1,12 @@
 import {
+  deleteCompletedRecord,
   formatFocusMinutes,
   formatRecordDateLabel,
   formatTimedRecordTimeRange,
   getMyTimedRecords,
   getMyTimedRecordsSummary,
   getToday,
+  updateCompletedRecord,
   type CompletedRecord,
 } from '../../utils/data'
 import { refreshWithLocalFirst } from '../../utils/cloud-sync'
@@ -18,10 +20,13 @@ import {
   PICKER_MONTHS,
   PICKER_YEARS,
 } from '../../utils/plan-edit-form'
+import { getPlanTagOptions, resolvePlanTag } from '../../utils/plan-tags'
+import { getScrollFadeState } from '../../utils/scroll-fade'
 
 interface FocusRecordView {
   id: string
   tag: string
+  tagId?: string
   detail: string
   durationText: string
   timeRange: string
@@ -52,6 +57,7 @@ const shiftDate = (dateText: string, offset: number) => {
 const toRecordView = (record: CompletedRecord, showDateLabel: boolean): FocusRecordView => ({
   id: record.id,
   tag: record.tag,
+  tagId: record.tagId,
   detail: record.detail,
   durationText: formatFocusMinutes(record.actualMinutes || 0),
   timeRange: formatTimedRecordTimeRange(record),
@@ -85,6 +91,16 @@ Component({
     loadMoreText: '',
     isPickerSheetVisible: false,
     isPickerSheetClosing: false,
+    isEditSheetVisible: false,
+    isEditSheetClosing: false,
+    editingRecordId: '',
+    editingTag: '',
+    editingTagId: '',
+    editingDetail: '',
+    availableTags: [] as string[],
+    showEditTagFadeLeft: false,
+    showEditTagFadeRight: false,
+    isTagCreateVisible: false,
     pickerTempValue: [0, 0, 0],
     pickerDayOptions: buildDayOptions(new Date().getFullYear(), new Date().getMonth() + 1),
     pickerYears: PICKER_YEARS,
@@ -219,6 +235,151 @@ Component({
       }
 
       this.reloadRecords(false)
+    },
+    openEditSheet(e: WechatMiniprogram.BaseEvent) {
+      const id = e.currentTarget.dataset.id as string
+      const record = this.data.records.find((r) => r.id === id)
+      if (!record) return
+
+      openModal(this, 'isEditSheetVisible', 'isEditSheetClosing', {
+        editingRecordId: record.id,
+        editingTag: resolvePlanTag(record.tag),
+        editingTagId: record.tagId || '',
+        editingDetail: record.detail,
+        availableTags: getPlanTagOptions().map((item) => item.name),
+        showEditTagFadeLeft: false,
+        showEditTagFadeRight: false,
+      })
+
+      wx.nextTick(() => {
+        this.updateEditTagFades()
+      })
+    },
+    closeEditSheet() {
+      dismissModal(this, 'isEditSheetVisible', 'isEditSheetClosing', {
+        extraData: {
+          editingRecordId: '',
+          editingTag: '',
+          editingTagId: '',
+          editingDetail: '',
+          availableTags: [],
+          showEditTagFadeLeft: false,
+          showEditTagFadeRight: false,
+        },
+      })
+    },
+    selectEditTag(e: WechatMiniprogram.BaseEvent) {
+      const tag = e.currentTarget.dataset.tag as string
+      if (!tag) return
+      this.setData({ editingTag: tag })
+    },
+    onEditTagScroll(e: WechatMiniprogram.ScrollViewScroll) {
+      const { scrollLeft, scrollWidth } = e.detail
+      const query = wx.createSelectorQuery().in(this)
+      query.select('.edit-record-tag-scroll').boundingClientRect()
+      query.exec((res) => {
+        const viewportWidth = res[0]?.width || 0
+        const fades = getScrollFadeState(scrollLeft, scrollWidth, viewportWidth)
+        this.setData({
+          showEditTagFadeLeft: fades.showLeft,
+          showEditTagFadeRight: fades.showRight,
+        })
+      })
+    },
+    updateEditTagFades(scrollLeft = 0) {
+      wx.nextTick(() => {
+        const query = wx.createSelectorQuery().in(this)
+        query.select('.edit-record-tag-scroll').boundingClientRect()
+        query.select('.edit-record-tag-list').boundingClientRect()
+        query.exec((res) => {
+          const viewportWidth = res[0]?.width || 0
+          const listWidth = res[1]?.width || 0
+          const fades = getScrollFadeState(scrollLeft, listWidth, viewportWidth)
+          this.setData({
+            showEditTagFadeLeft: fades.showLeft,
+            showEditTagFadeRight: fades.showRight,
+          })
+        })
+      })
+    },
+    onEditDetailInput(e: WechatMiniprogram.Input) {
+      this.setData({ editingDetail: e.detail.value })
+    },
+    confirmEditSheet() {
+      const { editingRecordId, editingTag, editingTagId, editingDetail } = this.data
+      const option = getPlanTagOptions().find((item) => item.name === editingTag)
+      const newTagId = option?.id || editingTagId
+
+      const ok = updateCompletedRecord(editingRecordId, {
+        tag: editingTag,
+        tagId: newTagId,
+        detail: editingDetail.trim(),
+      })
+
+      dismissModal(this, 'isEditSheetVisible', 'isEditSheetClosing', {
+        extraData: {
+          editingRecordId: '',
+          editingTag: '',
+          editingTagId: '',
+          editingDetail: '',
+          availableTags: [],
+          showEditTagFadeLeft: false,
+          showEditTagFadeRight: false,
+        },
+        onDismissed: () => {
+          if (ok) {
+            this.reloadRecords(true)
+          }
+        },
+      })
+    },
+    deleteEditingRecord() {
+      wx.showModal({
+        title: '删除记录',
+        content: '删除后这条专注记录将被移除，无法恢复。',
+        confirmText: '删除',
+        confirmColor: '#D96565',
+        success: (res) => {
+          if (!res.confirm) return
+
+          const ok = deleteCompletedRecord(this.data.editingRecordId)
+
+          dismissModal(this, 'isEditSheetVisible', 'isEditSheetClosing', {
+            extraData: {
+              editingRecordId: '',
+              editingTag: '',
+              editingTagId: '',
+              editingDetail: '',
+              availableTags: [],
+              showEditTagFadeLeft: false,
+              showEditTagFadeRight: false,
+            },
+            onDismissed: () => {
+              if (ok) {
+                this.reloadRecords(true)
+                wx.showToast({ title: '已删除', icon: 'none' })
+              }
+            },
+          })
+        },
+      })
+    },
+    openTagCreateSheet() {
+      this.setData({ isTagCreateVisible: true })
+    },
+    closeTagCreateSheet() {
+      this.setData({ isTagCreateVisible: false })
+    },
+    onEditTagCreateConfirm(e: WechatMiniprogram.CustomEvent) {
+      const { name } = e.detail || {}
+      if (!name) return
+      const tags = getPlanTagOptions().map((item) => item.name)
+      this.setData({
+        editingTag: name,
+        availableTags: tags,
+        isTagCreateVisible: false,
+      })
+      this.updateEditTagFades()
     },
     noop() {},
   },

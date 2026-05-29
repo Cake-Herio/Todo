@@ -116,10 +116,27 @@
         <view>
           <view class="ai-draft-title">确认变更</view>
           <view class="muted">请确认以下计划调整</view>
-          <view wx:if="{{aiDraftSourceText}}" class="ai-confirm-source-text">{{aiDraftSourceText}}</view>
         </view>
         <view class="ai-draft-close" catchtap="closeAiDraft">×</view>
       </view>
+
+      <scroll-view
+        wx:if="{{aiChatMessages.length}}"
+        class="ai-chat-thread"
+        scroll-y
+        enhanced
+        show-scrollbar="{{aiChatMessages.length > 4}}"
+        scroll-into-view="{{'ai-chat-end'}}"
+      >
+        <view
+          wx:for="{{aiChatMessages}}"
+          wx:key="id"
+          class="ai-chat-row {{item.role === 'user' ? 'is-user' : ''}} {{item.role === 'error' ? 'is-error' : ''}}"
+        >
+          <view class="ai-chat-bubble">{{item.text}}</view>
+        </view>
+        <view id="ai-chat-end"></view>
+      </scroll-view>
 
       <view wx:if="{{aiConfirmWarnings.length}}" class="ai-confirm-warnings">
         <view wx:for="{{aiConfirmWarnings}}" wx:key="*this" class="ai-confirm-warning-item">{{item}}</view>

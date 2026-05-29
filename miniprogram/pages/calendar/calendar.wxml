@@ -19,9 +19,13 @@
         </view>
         <view wx:if="{{item.hasItems}}" class="mini-plans">
           <view wx:for="{{item.plans}}" wx:key="id" wx:for-item="plan" class="mini-plan {{plan.tone}}">
-            <image class="mini-avatar {{plan.tone === 'gray' ? 'gray' : plan.tone}}" src="{{plan.avatarUrl}}" mode="aspectFill"></image>
+            <view class="mini-avatar-wrap">
+              <image class="mini-avatar {{plan.tone === 'gray' ? 'gray' : plan.tone}}" src="{{plan.avatarUrl}}" mode="aspectFill"></image>
+              <view wx:if="{{showPlanChecks && plan.isCompleted}}" class="mini-avatar-check">
+                <image class="mini-avatar-check-icon" src="/images/icons/check.svg" mode="aspectFit"></image>
+              </view>
+            </view>
             <plan-tag-pill name="{{plan.tag}}" size="xs-compact" ext-class="mini-plan-tag" />
-            <image wx:if="{{showPlanChecks && plan.isCompleted}}" class="mini-check" src="/images/icons/check.svg" mode="aspectFit"></image>
           </view>
         </view>
       </view>

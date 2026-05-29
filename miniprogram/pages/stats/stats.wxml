@@ -1,7 +1,12 @@
 <font-page-meta id="font-page-meta" />
 <view class="stats-page-shell" style="{{pageFontStyle}}">
   <scroll-view class="scroll-page stats-scroll" scroll-y type="list">
-    <view class="page stats-page" style="padding-top: {{safeTopPx}}px;">
+    <view
+      class="page stats-page"
+      style="padding-top: {{safeTopPx}}px;"
+      bindtouchstart="onSwipeStart"
+      bindtouchend="onSwipeEnd"
+    >
       <view class="page-top-header">
         <view class="page-top-title">{{rangeLabel}}统计</view>
         <view class="muted">按标签、成员和时间范围查看</view>
@@ -50,14 +55,13 @@
               >
                 <view class="tag-scroll-list stats-tag-echo-list">
                   <block wx:if="{{selectedTagEcho.length}}">
-                    <view
+                    <plan-tag-pill
                       wx:for="{{selectedTagEcho}}"
                       wx:key="tag"
-                      class="stats-tag-echo-chip"
-                      style="color: {{item.color}};"
-                    >
-                      {{item.tag}}
-                    </view>
+                      name="{{item.tag}}"
+                      color="{{item.color}}"
+                      size="sm"
+                    />
                   </block>
                   <text wx:else class="stats-tag-echo-placeholder muted">{{tagFilterEchoText}}</text>
                 </view>
@@ -78,43 +82,36 @@
         </view>
       </view>
 
+      <block wx:if="{{hasTagStats}}">
       <view class="section-title">标签时长</view>
-      <view class="tag-list card {{hasTagStats && statsSectionsVisible ? 'stats-block-animate' : ''}}">
-        <block wx:if="{{hasTagStats}}">
-          <view wx:for="{{displayTagStats}}" wx:key="tag" class="tag-stat">
-            <view class="tag-row">
-              <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" />
-              <text class="tag-time">{{item.animTime}}</text>
-            </view>
-            <view class="bar">
-              <view class="bar-fill" style="width: {{item.animPercent}}%; background: {{item.color}};"></view>
-            </view>
+      <view class="tag-list card">
+        <view wx:for="{{displayTagStats}}" wx:key="_rk" class="tag-stat">
+          <view class="tag-row">
+            <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" />
+            <text class="tag-time">{{item.animTime}}</text>
           </view>
-        </block>
-        <view wx:else class="stats-empty muted">{{tagEmptyText}}</view>
+          <view class="bar">
+            <view class="bar-fill" style="transform: scaleX({{item.animPercent / 100}}); transform-origin: left center; background: {{item.color}};"></view>
+          </view>
+        </view>
       </view>
 
       <view class="section-title">标签占比</view>
-      <view class="pie-card card {{hasTagStats && statsSectionsVisible ? 'stats-block-animate' : ''}}">
-        <view class="pie-chart" style="{{displayTagPieStyle}}">
-          <view class="pie-center">
-            <view class="pie-value">{{displayTotalFocus}}</view>
-            <view class="muted">总专注</view>
-          </view>
-        </view>
-
-        <view class="pie-legend">
-          <block wx:if="{{hasTagStats}}">
-            <view wx:for="{{displayTagPieLegend}}" wx:key="tag" class="legend-item">
-              <view class="legend-main">
-                <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" />
-              </view>
-              <view class="legend-meta">{{item.animShare}} · {{item.animTime}}</view>
-            </view>
-          </block>
-          <view wx:else class="stats-empty muted">{{tagPieEmptyText}}</view>
+      <view class="chart-card card" catchtouchstart="noop" catchtouchend="noop">
+        <swiper class="chart-swiper" current="{{tagChartView === 'bar' ? 1 : 0}}" bindchange="onTagChartSwiperChange" duration="250">
+          <swiper-item>
+            <canvas type="2d" id="pie-canvas" class="chart-canvas"></canvas>
+          </swiper-item>
+          <swiper-item>
+            <canvas type="2d" id="bar-canvas" class="chart-canvas"></canvas>
+          </swiper-item>
+        </swiper>
+        <view class="chart-indicators">
+          <view class="chart-dot {{tagChartView === 'pie' ? 'active' : ''}}"></view>
+          <view class="chart-dot {{tagChartView === 'bar' ? 'active' : ''}}"></view>
         </view>
       </view>
+      </block>
     </view>
   </scroll-view>
 
@@ -140,7 +137,7 @@
             catchtap="toggleTagFilter"
             data-tag="{{item.tag}}"
           >
-            <view class="tag-filter-item-chip" style="background: {{item.color}};">{{item.tag}}</view>
+            <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" />
             <view class="tag-filter-item-check {{item.checked ? 'is-checked' : ''}}">
               <text wx:if="{{item.checked}}" class="tag-filter-item-check-icon">✓</text>
             </view>

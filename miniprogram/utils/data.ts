@@ -679,4 +679,46 @@ export const getMyTimedRecordsSummary = (date?: string | null) => {
   }
 }
 
+export const updateCompletedRecord = (
+  id: string,
+  patch: { tag?: string; tagId?: string; detail?: string },
+): boolean => {
+  const data = getLocalData()
+  const record = data.completedRecords.find((r) => r.id === id)
+
+  if (!record || record.ownerKey !== 'me' || record.completionMode !== 'timed') {
+    return false
+  }
+
+  const updated: CompletedRecord = { ...record }
+  if (patch.tag !== undefined) updated.tag = patch.tag
+  if (patch.tagId !== undefined) updated.tagId = patch.tagId
+  if (patch.detail !== undefined) updated.detail = patch.detail
+
+  saveLocalData({
+    ...data,
+    completedRecords: data.completedRecords.map((r) => (r.id === id ? updated : r)),
+  })
+
+  notifyCloudDataChanged()
+  return true
+}
+
+export const deleteCompletedRecord = (id: string): boolean => {
+  const data = getLocalData()
+  const record = data.completedRecords.find((r) => r.id === id)
+
+  if (!record || record.ownerKey !== 'me' || record.completionMode !== 'timed') {
+    return false
+  }
+
+  saveLocalData({
+    ...data,
+    completedRecords: data.completedRecords.filter((r) => r.id !== id),
+  })
+
+  notifyCloudDataChanged()
+  return true
+}
+
 export const formatDate = formatDateValue

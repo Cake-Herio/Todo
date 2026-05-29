@@ -47,6 +47,14 @@ export interface AiReuseItem {
   patch: Partial<Pick<AiPlanDraft, 'defaultTag' | 'remark' | 'startTime' | 'endTime' | 'timeText'>>
 }
 
+export type AiPlanErrorCode = 'INVALID_TIME_RANGE' | 'TIME_OVERLAP' | 'PARSE_UNCERTAIN'
+
+export interface AiPlanError {
+  code: AiPlanErrorCode
+  message: string
+  target?: string
+}
+
 export interface AiPlanBatchResponse {
   intent: 'batch_plans'
   sourceText: string
@@ -56,6 +64,7 @@ export interface AiPlanBatchResponse {
   delete: AiDeleteSpec | null
   updates: AiPlanUpdateItem[]
   warnings: string[]
+  errors: AiPlanError[]
 }
 
 export type AiPlanResponse =
@@ -135,7 +144,8 @@ const voiceCommandSystemPrompt = `你是一个计划表语音指令 JSON 解析�
       "patch": { "defaultTag": "...", "remark": null, "date": "YYYY-MM-DD", "startTime": null, "endTime": null, "timeText": null }
     }
   ],
-  "warnings": []
+  "warnings": [],
+  "errors": []
 }
 
 示例：「删掉明天跑步，再加一个明天冥想」→ delete 填跑步对应 planId，creates 填冥想计划。
@@ -152,7 +162,11 @@ const voiceCommandSystemPrompt = `你是一个计划表语音指令 JSON 解析�
 8. completionMode 固定 "manual"。
 9. 删除「全部/清空」某天时 delete.scope 用 date_all 并填 date；未提到具体日期则 warnings 追问。
 10. 默认 ownerKey 为 me，除非用户明确说伴侣/对方。
-11. 复用时 reusePlans 应输出合并 patch 后的完整目标草稿。`
+11. 复用时 reusePlans 应输出合并 patch 后的完整目标草稿。
+12. 时段合法性：若同时给出 startTime 与 endTime，必须 startTime < endTime（00:00 为 24:00）。不满足时该条不进 creates/updates/reusePlans，在 errors 追加 { "code": "INVALID_TIME_RANGE", "message": "「标签名」14:00-13:00 开始时间不能晚于结束时间", "target": "creates[0]" }。
+13. 时段重叠：与「相关日期已有计划」或同批其他待生效条目时段重叠的，该条不进 creates/updates/reusePlans，errors 追加 { "code": "TIME_OVERLAP", "message": "「A」09:00-10:00 与「B」09:30-11:00 时段重叠", "target": "creates[0]" }。重叠判定：aStart < bEnd && bStart < aEnd。
+14. 若 creates/updates/reuses 全空且 delete 为 null，errors 至少一条说明原因（可复用 warnings）。
+15. errors 必须是 JSON 数组，每项含 code/message；禁止把错误写进 creates。`
 
 const refineBatchSystemPrompt = `${voiceCommandSystemPrompt}
 
@@ -220,6 +234,9 @@ const validateReuseItems = (value: unknown) =>
   value.every((item) => isRecord(item) && typeof item.sourcePlanId === 'string' && typeof item.targetDate === 'string')
 
 export const normalizeAiPlanResponse = (value: AiPlanResponse): AiPlanBatchResponse => {
+  const withErrors = (errors: unknown): AiPlanError[] =>
+    Array.isArray(errors) ? errors.filter((e) => isRecord(e) && typeof e.code === 'string' && typeof e.message === 'string') as AiPlanError[] : []
+
   if (value.intent === 'batch_plans') {
     return {
       intent: 'batch_plans',
@@ -230,6 +247,7 @@ export const normalizeAiPlanResponse = (value: AiPlanResponse): AiPlanBatchRespo
       delete: value.delete || null,
       updates: value.updates || [],
       warnings: value.warnings || [],
+      errors: withErrors((value as Record<string, unknown>).errors),
     }
   }
 
@@ -243,6 +261,7 @@ export const normalizeAiPlanResponse = (value: AiPlanResponse): AiPlanBatchRespo
       delete: null,
       updates: [],
       warnings: value.warnings,
+      errors: [],
     }
   }
 
@@ -256,6 +275,7 @@ export const normalizeAiPlanResponse = (value: AiPlanResponse): AiPlanBatchRespo
       delete: null,
       updates: value.updates,
       warnings: value.warnings,
+      errors: [],
     }
   }
 
@@ -269,6 +289,7 @@ export const normalizeAiPlanResponse = (value: AiPlanResponse): AiPlanBatchRespo
       delete: value.delete,
       updates: [],
       warnings: value.warnings,
+      errors: [],
     }
   }
 
@@ -281,6 +302,7 @@ export const normalizeAiPlanResponse = (value: AiPlanResponse): AiPlanBatchRespo
     delete: null,
     updates: [],
     warnings: value.warnings,
+    errors: [],
   }
 }
 
@@ -296,7 +318,8 @@ export const validateAiPlanResponse = (value: unknown): value is AiPlanResponse 
         (value.reuses === undefined || validateReuseItems(value.reuses)) &&
         (value.reusePlans === undefined || (Array.isArray(value.reusePlans) && value.reusePlans.every(validateAiPlanDraft))) &&
         (value.delete === undefined || value.delete === null || validateDeleteSpec(value.delete)) &&
-        (value.updates === undefined || validateUpdateItems(value.updates))
+        (value.updates === undefined || validateUpdateItems(value.updates)) &&
+        (value.errors === undefined || Array.isArray(value.errors))
       )
     case 'create_plans':
       return Array.isArray(value.plans) && value.plans.every(validateAiPlanDraft)

@@ -44,7 +44,7 @@
       </view>
 
       <view wx:if="{{records.length}}" class="record-list">
-        <view wx:for="{{records}}" wx:key="id" class="record-card card">
+        <view wx:for="{{records}}" wx:key="id" class="record-card card" data-id="{{item.id}}" bindtap="openEditSheet">
           <view class="record-card-meta">
             <view class="record-card-meta-start">
               <plan-tag-pill name="{{item.tag}}" size="sm" />
@@ -93,4 +93,65 @@
       </view>
     </view>
   </view>
+
+  <view wx:if="{{isEditSheetVisible}}" class="edit-record-mask mask-fade {{isEditSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="closeEditSheet" catchtouchmove="noop">
+    <view class="edit-record-panel panel-slide {{isEditSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
+      <view class="edit-record-header">
+        <text class="edit-record-title">编辑记录</text>
+      </view>
+
+      <view class="edit-record-section">
+        <view class="edit-record-label">标签</view>
+        <view class="edit-record-tags-wrap">
+          <view class="edit-record-h-fade edit-record-h-fade-left {{showEditTagFadeLeft ? 'is-visible' : ''}}"></view>
+          <scroll-view
+            class="edit-record-tag-scroll"
+            scroll-x
+            enhanced
+            show-scrollbar="{{false}}"
+            enable-flex
+            bindscroll="onEditTagScroll"
+          >
+            <view class="edit-record-tag-list">
+              <view
+                wx:for="{{availableTags}}"
+                wx:key="*this"
+                class="edit-record-tag-option"
+                data-tag="{{item}}"
+                bindtap="selectEditTag"
+              >
+                <plan-tag-pill name="{{item}}" size="sm" active="{{editingTag === item}}" />
+              </view>
+            </view>
+          </scroll-view>
+          <view class="edit-record-tags-trail">
+            <view class="edit-record-h-fade edit-record-h-fade-right {{showEditTagFadeRight ? 'is-visible' : ''}}"></view>
+            <view class="edit-record-tag-add" bindtap="openTagCreateSheet">+</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="edit-record-section">
+        <view class="edit-record-label">备注</view>
+        <textarea
+          class="edit-record-textarea"
+          value="{{editingDetail}}"
+          placeholder="添加备注..."
+          maxlength="200"
+          bindinput="onEditDetailInput"
+        />
+      </view>
+
+      <view class="edit-record-actions">
+        <view class="edit-record-delete" bindtap="deleteEditingRecord">删除这条记录</view>
+      </view>
+    </view>
+  </view>
+
+  <tag-create-sheet
+    visible="{{isTagCreateVisible}}"
+    pageFontStyle="{{pageFontStyle}}"
+    bind:close="closeTagCreateSheet"
+    bind:confirm="onEditTagCreateConfirm"
+  />
 </view>

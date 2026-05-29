@@ -242,14 +242,20 @@ page {
   padding: 0;
   font-size: 18rpx;
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
   text-overflow: ellipsis;
 }
 
-.mini-avatar {
+.mini-avatar-wrap {
+  position: relative;
+  flex: 0 0 24rpx;
   width: 24rpx;
   height: 24rpx;
-  flex: 0 0 24rpx;
+}
+
+.mini-avatar {
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   box-sizing: border-box;
 }
@@ -267,17 +273,31 @@ page {
   opacity: 0.82;
 }
 
+.mini-avatar-check {
+  position: absolute;
+  right: -5rpx;
+  bottom: -5rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #7FB592;
+  box-shadow: 0 0 0 2rpx #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mini-avatar-check-icon {
+  width: 10rpx;
+  height: 10rpx;
+}
+
 .mini-plan plan-tag-pill,
 .mini-plan-tag {
   flex: 1;
   min-width: 0;
-  max-width: 100%;
-}
-
-.mini-check {
-  width: 20rpx;
-  height: 20rpx;
-  flex: 0 0 20rpx;
 }
 
 .calendar-view-switch-wrap {
