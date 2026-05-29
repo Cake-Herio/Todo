@@ -422,6 +422,102 @@ const notifyUsers = async (payload = {}) => {
   }
 }
 
+/**
+ * 通知同组成员当前用户的专注状态变化
+ * payload: { eventType, tag, elapsedMinutes, actorName }
+ */
+const notifyRoomFocusChange = async (openid, payload = {}) => {
+  const eventType = payload.eventType || 'start'
+  const tag = `${payload.tag || ''}`.trim()
+  const elapsedMinutes = Math.max(0, Number(payload.elapsedMinutes) || 0)
+
+  // 查找用户所属的 sharedSpaceId
+  const user = await findUserByOpenid(openid)
+  if (!user?.sharedSpaceId) {
+    return { ok: false, skipped: true, message: '未加入共享空间' }
+  }
+
+  const actorName = `${payload.actorName || user.nickname || ''}`.trim() || '队友'
+
+  // 查询同组成员
+  const membersRes = await db.collection('users')
+    .where({ sharedSpaceId: user.sharedSpaceId })
+    .get()
+  const members = membersRes.data || []
+
+  // 收集其他成员的 openid
+  const targetOpenids = members
+    .map((m) => m.openid || m._openid)
+    .filter((oid) => oid && oid !== openid)
+
+  if (targetOpenids.length === 0) {
+    return { ok: true, skipped: true, message: '无其他成员' }
+  }
+
+  // 构建推送正文
+  const formatMinutes = (mins) => {
+    if (mins < 60) return `${mins} 分钟`
+    const h = Math.floor(mins / 60)
+    const rest = mins % 60
+    return rest === 0 ? `${h} 小时` : `${h} 小时 ${rest} 分钟`
+  }
+
+  let body = ''
+  switch (eventType) {
+    case 'start':
+      body = `${actorName} 开始专注`
+      if (tag) body += ` · ${tag}`
+      break
+    case 'pause':
+      body = `${actorName} 暂停专注`
+      if (tag) body += ` · ${tag}`
+      body += ` · 已专注 ${formatMinutes(elapsedMinutes)}`
+      break
+    case 'resume':
+      body = `${actorName} 继续专注`
+      if (tag) body += ` · ${tag}`
+      break
+    case 'end':
+      body = `${actorName} 结束专注`
+      if (tag) body += ` · ${tag}`
+      body += ` · 共 ${formatMinutes(elapsedMinutes)}`
+      break
+    default:
+      body = `${actorName} 专注状态更新`
+      if (tag) body += ` · ${tag}`
+  }
+
+  // 逐个推送
+  const results = []
+  for (const targetOpenid of targetOpenids) {
+    try {
+      const pushResult = await pushBarkToUser(targetOpenid, {
+        title: 'MyForest',
+        body,
+      })
+      results.push({
+        openid: targetOpenid,
+        ok: Boolean(pushResult.ok),
+        skipped: Boolean(pushResult.skipped),
+        message: pushResult.message,
+      })
+    } catch (error) {
+      results.push({
+        openid: targetOpenid,
+        ok: false,
+        message: error.message || '推送失败',
+      })
+    }
+  }
+
+  return {
+    ok: true,
+    eventType,
+    count: results.length,
+    results,
+  }
+}
+
 const buildPlanReminderBody = (plan, slot) => {
   const tag = `${plan.tag || ''}`.trim() || '计划'
   const title = `${plan.title || plan.remark || ''}`.trim()
@@ -612,6 +708,10 @@ exports.main = async (event) => {
 
     if (action === 'notifyUsers') {
       return await notifyUsers(event.payload || {})
+    }
+
+    if (action === 'notifyRoomFocusChange') {
+      return await notifyRoomFocusChange(openid, event.payload || {})
     }
 
     return { ok: false, message: `未知 action: ${action}` }

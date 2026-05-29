@@ -53,4 +53,5 @@
   defaultVisibility="shared"
   bind:close="closeTagCreateSheet"
   bind:confirm="onTagCreateConfirm"
+  bind:delete="onTagDelete"
 />

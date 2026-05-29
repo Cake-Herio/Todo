@@ -20,6 +20,12 @@ export interface BarkKeyStatus {
   maskedKey: string
 }
 
+export interface RoomFocusChangePayload {
+  eventType: 'start' | 'pause' | 'resume' | 'end'
+  tag?: string
+  elapsedMinutes: number
+}
+
 interface BarkResult {
   ok?: boolean
   skipped?: boolean
@@ -166,5 +172,17 @@ export const sendBarkEnableTestPush = async () => {
 
   if (!response.ok) {
     throw new Error(response.message || '发送测试推送失败')
+  }
+}
+
+/**
+ * 通知同组成员当前用户的专注状态变化（开始/暂停/继续/结束）
+ * 仅 sharedSpace 模式下有效；云函数内自动跳过 solo 用户和非组用户
+ */
+export const notifyRoomFocusChange = async (payload: RoomFocusChangePayload) => {
+  try {
+    await callBark('notifyRoomFocusChange', payload)
+  } catch (error) {
+    console.warn('[bark] notify room focus change failed', error)
   }
 }

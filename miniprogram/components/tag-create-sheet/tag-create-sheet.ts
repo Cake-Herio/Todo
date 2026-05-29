@@ -110,6 +110,13 @@ Component({
         this.triggerEvent('close')
       })
     },
+    deleteSheet() {
+      this.dismissSheet(() => {
+        this.triggerEvent('delete', {
+          id: this.data.editingTagId,
+        })
+      })
+    },
     confirmSheet() {
       this.dismissSheet(() => {
         this.triggerEvent('confirm', {

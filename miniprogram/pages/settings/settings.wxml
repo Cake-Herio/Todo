@@ -139,9 +139,8 @@
           </view>
           <view class="activitysmith-step">2. 打开 Bark，复制首页推送地址或 Key</view>
           <view class="activitysmith-step">3. 在上方输入框粘贴并保存 Key</view>
-          <view class="activitysmith-step">4. 开启开关；精准计划会提前 10/1 分钟提醒，专注每 15 分钟推送</view>
+          <view class="activitysmith-step">4. 开启开关；精准计划会提前 10 分钟及一分钟提醒，专注每 15 分钟推送</view>
           <view class="activitysmith-step">5. 计划提醒需已加入共享空间且计划已同步到云</view>
-          <view class="activitysmith-step">6. 推送配图已放在云存储 myforest-bark-push.png，无需升级公网权限</view>
         </view>
       </view>
     </view>

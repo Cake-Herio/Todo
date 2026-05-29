@@ -646,8 +646,26 @@ Component({
         return
       }
 
+      if (key === this.data.fontPreference) {
+        dismissModal(this, 'isFontSheetVisible', 'isFontSheetClosing')
+        return
+      }
+
       dismissModal(this, 'isFontSheetVisible', 'isFontSheetClosing')
-      void this.applyFontPreference(key)
+      wx.showModal({
+        title: '更换字体',
+        content: '更换字体后需要重启小程序',
+        showCancel: true,
+        confirmText: '确定',
+        success: async (res) => {
+          if (!res.confirm) {
+            return
+          }
+
+          await this.applyFontPreference(key)
+          wx.reLaunch({ url: '/pages/index/index' })
+        },
+      })
     },
     async onItemTap(e: WechatMiniprogram.BaseEvent) {
       const label = e.currentTarget.dataset.label

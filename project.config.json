@@ -46,72 +46,72 @@
   "packOptions": {
     "ignore": [
       {
-        "type": "folder",
-        "value": "pages/example"
+        "value": "pages/example",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "components/cloudTipModal"
+        "value": "components/cloudTipModal",
+        "type": "folder"
       },
       {
-        "type": "file",
-        "value": "envList.js"
+        "value": "envList.js",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/ai_example2.png"
+        "value": "images/ai_example2.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/cloud_dev.png"
+        "value": "images/cloud_dev.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/avatar.png"
+        "value": "images/avatar.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/avatar.png"
+        "value": "images/icons/avatar.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/examples.png"
+        "value": "images/icons/examples.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/examples-active.png"
+        "value": "images/icons/examples-active.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/goods.png"
+        "value": "images/icons/goods.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/goods-active.png"
+        "value": "images/icons/goods-active.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/business.png"
+        "value": "images/icons/business.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/business-active.png"
+        "value": "images/icons/business-active.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/home.png"
+        "value": "images/icons/home.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/home-active.png"
+        "value": "images/icons/home-active.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/usercenter.png"
+        "value": "images/icons/usercenter.png",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "images/icons/usercenter-active.png"
+        "value": "images/icons/usercenter-active.png",
+        "type": "file"
       }
     ],
     "include": []

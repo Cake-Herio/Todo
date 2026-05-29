@@ -81,7 +81,16 @@
     </view>
 
     <view class="tag-create-actions">
-      <button class="tag-create-cancel secondary-button" catchtap="closeSheet">取消</button>
+      <button
+        wx:if="{{isEditMode}}"
+        class="tag-create-delete danger-button"
+        catchtap="deleteSheet"
+      >删除标签</button>
+      <button
+        wx:else
+        class="tag-create-cancel secondary-button"
+        catchtap="closeSheet"
+      >取消</button>
       <button class="tag-create-confirm primary-button" catchtap="confirmSheet">{{isEditMode ? '保存' : '添加'}}</button>
     </view>
   </view>

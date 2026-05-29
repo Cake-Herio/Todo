@@ -188,5 +188,52 @@ Component({
         },
       })
     },
+    async onTagDelete(e: WechatMiniprogram.CustomEvent<{ id: string }>) {
+      const { id } = e.detail
+      if (!id) {
+        return
+      }
+
+      const tag = [...this.data.sharedTags, ...this.data.privateTags].find((item) => item.id === id)
+      if (!tag) {
+        return
+      }
+
+      wx.showModal({
+        title: '删除标签',
+        content: `确定删除「${tag.name}」吗？`,
+        confirmColor: '#D96565',
+        success: async (res) => {
+          if (!res.confirm) {
+            return
+          }
+
+          wx.showLoading({ title: '删除中...', mask: true })
+
+          try {
+            const result = await deletePlanTagOption(id)
+            if (!result.ok) {
+              wx.showToast({
+                title: result.message || '删除失败',
+                icon: 'none',
+              })
+              return
+            }
+
+            this.setData({
+              isTagCreateVisible: false,
+              editingTag: null,
+            })
+            this.refreshTags()
+            wx.showToast({
+              title: '已删除',
+              icon: 'none',
+            })
+          } finally {
+            wx.hideLoading()
+          }
+        },
+      })
+    },
   },
 })

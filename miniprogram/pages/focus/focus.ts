@@ -13,6 +13,7 @@ import {
 import {
   endBarkFocusSession,
   isBarkEnabled,
+  notifyRoomFocusChange,
   registerBarkFocusSession,
 } from '../../utils/bark'
 import { canPublishFocusPresence, clearFocusPresence, fetchOwnFocusPresence, publishFocusPresence } from '../../utils/focus-presence'
@@ -372,6 +373,22 @@ Component({
 
       void registerBarkFocusSession(this.getBarkSessionPayload())
     },
+    /**
+     * 通知同组成员当前专注状态变化（仅在 sharedSpace 模式下生效）
+     */
+    notifyRoomFocusEvent(eventType: 'start' | 'pause' | 'resume' | 'end') {
+      if (!canPublishFocusPresence()) {
+        return
+      }
+
+      const elapsedMinutes = Math.floor(this.accumulatedElapsedMs / 60000)
+
+      void notifyRoomFocusChange({
+        eventType,
+        tag: this.data.selectedTag || undefined,
+        elapsedMinutes,
+      })
+    },
     clearActivitySmithPresence(elapsedSeconds?: number) {
       if (!isActivitySmithEnabled()) {
         return
@@ -461,6 +478,7 @@ Component({
         })
         this.startTick()
         this.syncFocusPresence()
+        this.notifyRoomFocusEvent('start')
       }, MORPH_DURATION_MS)
     },
     onMorphLeftTap() {
@@ -488,8 +506,10 @@ Component({
         this.sealRunningElapsed()
         this.refreshElapsedDisplay()
         this.stopTick()
+        this.notifyRoomFocusEvent('pause')
       } else {
         this.focusSegmentStartedAt = Date.now()
+        this.notifyRoomFocusEvent('resume')
       }
 
       this.setData({
@@ -520,6 +540,7 @@ Component({
 
       this.stopTick()
       unlockFocusPage()
+      this.notifyRoomFocusEvent('end')
       void clearFocusPresence()
       this.clearActivitySmithPresence(elapsedSeconds)
       this.clearBarkFocusSession()
@@ -754,6 +775,7 @@ Component({
         onDismissed: () => {
           this.stopTick()
           unlockFocusPage()
+          this.notifyRoomFocusEvent('end')
           void clearFocusPresence()
           this.clearActivitySmithPresence()
           this.clearBarkFocusSession()
