@@ -273,6 +273,51 @@ export const initCloudSync = () => {
   })
 }
 
+const mergeByUpdatedAt = <T extends { id: string; updatedAt: number }>(localItems: T[], cloudItems: T[]): T[] => {
+  const merged = new Map<string, T>()
+
+  cloudItems.forEach((item) => {
+    merged.set(item.id, item)
+  })
+
+  localItems.forEach((localItem) => {
+    const cloudItem = merged.get(localItem.id)
+
+    if (!cloudItem || localItem.updatedAt >= cloudItem.updatedAt) {
+      merged.set(localItem.id, localItem)
+    }
+  })
+
+  return Array.from(merged.values()).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+const mergeRecordsByCompletedAt = (localItems: CompletedRecord[], cloudItems: CompletedRecord[]): CompletedRecord[] => {
+  const merged = new Map<string, CompletedRecord>()
+
+  cloudItems.forEach((item) => {
+    merged.set(item.id, item)
+  })
+
+  localItems.forEach((localItem) => {
+    const cloudItem = merged.get(localItem.id)
+
+    if (!cloudItem || localItem.completedAt >= cloudItem.completedAt) {
+      merged.set(localItem.id, localItem)
+    }
+  })
+
+  return Array.from(merged.values()).sort((a, b) => b.completedAt - a.completedAt)
+}
+
+export const flushCloudPush = async (): Promise<void> => {
+  if (pushTimer) {
+    clearTimeout(pushTimer)
+    pushTimer = null
+  }
+
+  await pushLocalDataToCloudNow()
+}
+
 export const scheduleCloudPush = () => {
   if (!isSessionReady()) {
     return
@@ -339,8 +384,10 @@ export const syncFromCloud = async (): Promise<boolean> => {
     }
 
     try {
+      await flushCloudPush()
+
       const sharedData = await fetchSharedDataViaCloudFunction()
-      const [cloudPlans, cloudRecords] = sharedData
+      const [cloudPlanDocs, cloudRecordDocs] = sharedData
         ? [sharedData.plans, sharedData.records]
         : await Promise.all([
             fetchCloudCollection<CloudPlanDoc>('plans', session.sharedSpaceId!),
@@ -363,13 +410,15 @@ export const syncFromCloud = async (): Promise<boolean> => {
       const local = getLocalData()
       const bootstrapped = wx.getStorageSync(BOOTSTRAP_KEY) as boolean
 
-      if (cloudPlans.length === 0 && cloudRecords.length === 0 && !bootstrapped && (local.plans.length > 0 || local.completedRecords.length > 0)) {
+      if (cloudPlanDocs.length === 0 && cloudRecordDocs.length === 0 && !bootstrapped && (local.plans.length > 0 || local.completedRecords.length > 0)) {
         await pushLocalDataToCloud(session)
         return false
       }
 
-      const plans = cloudPlans.map((doc) => cloudPlanToPlan(doc, session))
-      const completedRecords = cloudRecords.map((doc) => cloudRecordToRecord(doc, session))
+      const cloudPlans = cloudPlanDocs.map((doc) => cloudPlanToPlan(doc, session))
+      const cloudRecords = cloudRecordDocs.map((doc) => cloudRecordToRecord(doc, session))
+      const plans = mergeByUpdatedAt(local.plans, cloudPlans)
+      const completedRecords = mergeRecordsByCompletedAt(local.completedRecords, cloudRecords)
 
       const changed =
         JSON.stringify(local.plans) !== JSON.stringify(plans) ||

@@ -1,6 +1,7 @@
 import { notifyCloudMutate } from './cloud-bridge'
 import { resolveTagBindingFromList } from './tag-binding'
 import { getSession } from './session'
+import { ScheduleTimeHelper } from './schedule-time'
 
 export type OwnerKey = 'me' | 'partner'
 export type PlanStatus = 'pending' | 'in_progress' | 'completed' | 'overdue' | 'cancelled'
@@ -225,25 +226,13 @@ export const getBindablePlansForToday = (ownerKey: OwnerKey = 'me') =>
 
 export const getPlanById = (planId: string) => getPlans().find((plan) => plan.id === planId) || null
 
-const parseTimeToMinutes = (time: string, treatMidnightAsEnd = false) => {
-  const [hourText, minuteText] = time.split(':')
-  let hour = Number(hourText)
-  const minute = Number(minuteText || '0')
-
-  if (treatMidnightAsEnd && hour === 0 && minute === 0) {
-    hour = 24
-  }
-
-  return hour * 60 + minute
-}
-
 const isTimedPlanRecord = (plan: Plan) => Boolean(plan.startTime && plan.endTime)
 
 const timedPlansOverlap = (startA: string, endA: string, startB: string, endB: string) => {
-  const aStart = parseTimeToMinutes(startA)
-  const aEnd = parseTimeToMinutes(endA, true)
-  const bStart = parseTimeToMinutes(startB)
-  const bEnd = parseTimeToMinutes(endB, true)
+  const aStart = ScheduleTimeHelper.parseToMinutes(startA)
+  const aEnd = ScheduleTimeHelper.parseToMinutes(endA, true)
+  const bStart = ScheduleTimeHelper.parseToMinutes(startB)
+  const bEnd = ScheduleTimeHelper.parseToMinutes(endB, true)
 
   return aStart < bEnd && bStart < aEnd
 }
@@ -294,7 +283,7 @@ export const findTimedScheduleConflictMessage = (
     return null
   }
 
-  if (parseTimeToMinutes(startTime) >= parseTimeToMinutes(endTime, true)) {
+  if (!ScheduleTimeHelper.isValidTimeRange(startTime, endTime)) {
     return '结束时间需晚于开始时间'
   }
 
@@ -379,7 +368,7 @@ export const addPlan = (input: {
   const hasTimedRange = Boolean(startTime && endTime)
 
   if (hasTimedRange) {
-    if (parseTimeToMinutes(startTime) >= parseTimeToMinutes(endTime, true)) {
+    if (!ScheduleTimeHelper.isValidTimeRange(startTime, endTime)) {
       return { ok: false, message: '结束时间需晚于开始时间' }
     }
 
@@ -462,7 +451,7 @@ export const updatePlan = (
   const hasTimedRange = Boolean(startTime && endTime)
 
   if (hasTimedRange) {
-    if (parseTimeToMinutes(startTime) >= parseTimeToMinutes(endTime, true)) {
+    if (!ScheduleTimeHelper.isValidTimeRange(startTime, endTime)) {
       return { ok: false, message: '结束时间需晚于开始时间' }
     }
 
@@ -512,13 +501,33 @@ export const updatePlan = (
 }
 
 export const deletePlan = (planId: string) => {
+  deletePlansByIds([planId])
+}
+
+export const deletePlansByIds = (planIds: string[]) => {
+  const uniqueIds = Array.from(new Set(planIds.filter(Boolean)))
+
+  if (uniqueIds.length === 0) {
+    return 0
+  }
+
+  const idSet = new Set(uniqueIds)
   const data = getLocalData()
+  const nextPlans = data.plans.filter((plan) => !idSet.has(plan.id))
+  const removedCount = data.plans.length - nextPlans.length
+
+  if (removedCount === 0) {
+    return 0
+  }
+
   saveLocalData({
     ...data,
-    plans: data.plans.filter((plan) => plan.id !== planId),
+    plans: nextPlans,
   })
 
   notifyCloudDataChanged()
+
+  return removedCount
 }
 
 export const completePlan = (planId: string) => {

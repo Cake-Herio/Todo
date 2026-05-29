@@ -1065,11 +1065,192 @@ page {
 
 .ai-draft-card {
   margin-bottom: 18rpx;
-  padding: 20rpx;
+  padding: 0;
   border: 2rpx solid #edf2e8;
   border-radius: 28rpx;
   background: linear-gradient(135deg, #ffffff 0%, #F4F8F5 100%);
   box-shadow: 0 10rpx 24rpx rgba(62, 94, 72, 0.07);
+}
+
+.ai-confirm-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 28rpx;
+  transform: translateZ(0);
+}
+
+.ai-confirm-card-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  opacity: 0.92;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ai-confirm-card-inner {
+  position: relative;
+  z-index: 1;
+  padding: 20rpx;
+}
+
+.ai-confirm-card.is-add {
+  border-color: #9fd4b0;
+}
+
+.ai-confirm-card.is-add .ai-confirm-card-glow {
+  background: linear-gradient(125deg, #f8fffa 0%, #e8f6ec 28%, #d4edd9 52%, #e8f6ec 76%, #f8fffa 100%);
+  background-size: 200% 200%;
+  animation: confirmGlowShift 4.5s ease infinite, confirmPulseAdd 3.2s ease-in-out infinite;
+}
+
+.ai-confirm-card.is-delete {
+  border-color: #efb0b0;
+}
+
+.ai-confirm-card.is-delete .ai-confirm-card-glow {
+  background: linear-gradient(125deg, #fffafa 0%, #ffecec 28%, #ffd9d9 52%, #ffecec 76%, #fffafa 100%);
+  background-size: 200% 200%;
+  animation: confirmGlowShift 4.5s ease infinite, confirmPulseDelete 3.2s ease-in-out infinite;
+}
+
+.ai-confirm-card.is-delete .ai-draft-meta-row,
+.ai-confirm-card.is-delete .ai-draft-remark,
+.ai-confirm-card.is-delete .ai-confirm-source {
+  opacity: 0.72;
+  text-decoration: line-through;
+}
+
+.ai-confirm-card.is-update {
+  border-color: #e8c547;
+}
+
+.ai-confirm-card.is-update .ai-confirm-card-glow {
+  background: linear-gradient(125deg, #fffdf5 0%, #fff6dc 28%, #ffeeb8 52%, #fff6dc 76%, #fffdf5 100%);
+  background-size: 200% 200%;
+  animation: confirmGlowShift 4.5s ease infinite, confirmPulseUpdate 3.2s ease-in-out infinite;
+}
+
+@keyframes confirmGlowShift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes confirmPulseAdd {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(127, 181, 146, 0);
+  }
+
+  50% {
+    box-shadow: inset 0 0 24rpx rgba(127, 181, 146, 0.18);
+  }
+}
+
+@keyframes confirmPulseDelete {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(229, 115, 115, 0);
+  }
+
+  50% {
+    box-shadow: inset 0 0 24rpx rgba(229, 115, 115, 0.16);
+  }
+}
+
+@keyframes confirmPulseUpdate {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(232, 197, 71, 0);
+  }
+
+  50% {
+    box-shadow: inset 0 0 24rpx rgba(232, 197, 71, 0.18);
+  }
+}
+
+.ai-confirm-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.ai-confirm-diff-row {
+  display: grid;
+  grid-template-columns: 88rpx 1fr 28rpx 1fr;
+  gap: 8rpx;
+  align-items: center;
+}
+
+.ai-confirm-diff-label {
+  color: #7a857d;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.ai-confirm-diff-before,
+.ai-confirm-diff-after {
+  min-width: 0;
+  color: #667369;
+  font-size: 22rpx;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.ai-confirm-diff-arrow {
+  color: #b5bfb7;
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.ai-confirm-diff-after.is-changed {
+  color: #2f3a34;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: #e8c547;
+}
+
+.ai-confirm-source,
+.ai-confirm-source-text {
+  color: #7a857d;
+  font-size: 22rpx;
+  line-height: 1.4;
+}
+
+.ai-confirm-source {
+  margin-top: 12rpx;
+}
+
+.ai-confirm-source-text {
+  margin-top: 10rpx;
+}
+
+.ai-confirm-warnings {
+  margin-top: 18rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 22rpx;
+  background: #fff6df;
+}
+
+.ai-confirm-warning-item {
+  color: #9a7428;
+  font-size: 23rpx;
+  line-height: 1.45;
+}
+
+.ai-draft-action-button.primary-button.danger {
+  background: #e57373;
 }
 
 .ai-draft-top-row {

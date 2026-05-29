@@ -1,14 +1,34 @@
 import { getFallbackAvatarUrl, resolvePartnerAvatarForDisplay, toDisplayAvatarUrl } from '../../utils/avatar-display'
-import { addPlan, findTimedScheduleBatchConflictMessage, formatDate, getOwnerAvatarUrl, getPlansByDate, getToday, type OwnerKey, type Plan } from '../../utils/data'
+import { addPlan, deletePlansByIds, findTimedScheduleBatchConflictMessage, formatDate, getOwnerAvatarUrl, getPlans, getPlansByDate, getToday, updatePlan, type OwnerKey, type Plan } from '../../utils/data'
 import { refreshWithLocalFirst, bootstrapSharedSpace } from '../../utils/cloud-sync'
 import { getDisplayAvatarUrl, getDisplayNickname, getPartnerDisplayAvatarUrl, getPartnerDisplayNickname, getSession, isProfileComplete, isSharedSpaceMode, saveUserProfile, tryRestoreSessionFromCloud } from '../../utils/session'
 import { getOwnerFilterStateLocal } from '../../utils/owner-filters'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
 import { fetchOwnFocusPresence, fetchPartnerFocusPresence } from '../../utils/focus-presence'
-import { parsePlanTextWithDeepSeek, refinePlanDraftsWithDeepSeek, type AiPlanDraft, type AiDraftRefineSnapshot } from '../../utils/deepseek'
+import {
+  parseVoicePlanCommandWithDeepSeek,
+  refineVoiceCommandWithDeepSeek,
+  type AiPlanDraft,
+  type AiDraftRefineSnapshot,
+  type AiConfirmRefineSnapshot,
+} from '../../utils/deepseek'
+import {
+  buildAiPlanContext,
+  hasBatchOperations,
+  inferDateScopeFromText,
+  mapAddConfirmCards,
+  mapDeleteConfirmCards,
+  mapUpdateConfirmCards,
+  mergeBatchConfirmState,
+  resolveBatchConfirmState,
+  type AiConfirmCardView,
+  type AiUpdatePayload,
+  type ResolvedBatchDraft,
+} from '../../utils/plan-ai-actions'
 import { addPlanTagOption, DEFAULT_PLAN_TAGS, getPlanTagNames, getPlanTagOptions, resolvePlanTag } from '../../utils/plan-tags'
 import { getScrollFadeState } from '../../utils/scroll-fade'
+import { ScheduleTimeHelper } from '../../utils/schedule-time'
 import {
   applyEditPlanFormToDraft,
   buildDayOptions,
@@ -40,14 +60,7 @@ interface AiDraftEntry {
   id: string
   ownerKey: OwnerKey
   plan: AiPlanDraft
-}
-
-interface AiDraftCardView {
-  id: string
-  tag: string
-  remark: string
-  dateLabel: string
-  timeLabel: string
+  sourceLabel?: string
 }
 
 interface UpcomingPreviewPlan {
@@ -64,61 +77,21 @@ interface UpcomingPreviewPlan {
   minutesUntil: number
 }
 
-const getStatusClass = (statusLabel: string): 'soon' | 'wait' =>
-  statusLabel === '即将开始' || statusLabel === '即将结束' ? 'soon' : 'wait'
-
-const UPCOMING_WINDOW_MINUTES = 120
 /** 主页专注状态轮询间隔（自己 + 对方） */
 const FOCUS_PRESENCE_POLL_MS = 60 * 1000
-
-const parseTimeToMinutes = (time: string, treatMidnightAsEnd = false) => {
-  const [hourText, minuteText] = time.split(':')
-  let hour = Number(hourText)
-  const minute = Number(minuteText || '0')
-
-  if (treatMidnightAsEnd && hour === 0 && minute === 0) {
-    hour = 24
-  }
-
-  return hour * 60 + minute
-}
-
-const getNowMinutes = () => {
-  const now = new Date()
-  return now.getHours() * 60 + now.getMinutes()
-}
-
-const formatMinutesHint = (minutesUntil: number, kind: 'start' | 'end') => {
-  if (minutesUntil <= 0) {
-    return kind === 'start' ? '马上开始' : '马上结束'
-  }
-
-  if (minutesUntil < 60) {
-    return `${minutesUntil} 分钟后${kind === 'start' ? '开始' : '结束'}`
-  }
-
-  const hours = Math.floor(minutesUntil / 60)
-  const minutes = minutesUntil % 60
-
-  if (minutes === 0) {
-    return `${hours} 小时后${kind === 'start' ? '开始' : '结束'}`
-  }
-
-  return `${hours} 小时 ${minutes} 分钟后${kind === 'start' ? '开始' : '结束'}`
-}
 
 const buildUpcomingPreview = (plan: Plan, nowMinutes: number): UpcomingPreviewPlan | null => {
   if (!plan.startTime || !plan.endTime) {
     return null
   }
 
-  const startMin = parseTimeToMinutes(plan.startTime)
-  const endMin = parseTimeToMinutes(plan.endTime, true)
+  const startMin = ScheduleTimeHelper.parseToMinutes(plan.startTime)
+  const endMin = ScheduleTimeHelper.parseToMinutes(plan.endTime, true)
 
   if (nowMinutes < startMin) {
     const minutesUntil = startMin - nowMinutes
 
-    if (minutesUntil > UPCOMING_WINDOW_MINUTES) {
+    if (minutesUntil > ScheduleTimeHelper.UPCOMING_WINDOW_MINUTES) {
       return null
     }
 
@@ -131,8 +104,8 @@ const buildUpcomingPreview = (plan: Plan, nowMinutes: number): UpcomingPreviewPl
       ownerAvatarUrl: getOwnerAvatarUrl(plan.ownerKey),
       color: plan.color,
       statusLabel: minutesUntil <= 15 ? '即将开始' : '待开始',
-      statusClass: getStatusClass(minutesUntil <= 15 ? '即将开始' : '待开始'),
-      hint: formatMinutesHint(minutesUntil, 'start'),
+      statusClass: ScheduleTimeHelper.resolveStatusClass(minutesUntil <= 15 ? '即将开始' : '待开始'),
+      hint: ScheduleTimeHelper.formatMinutesHint(minutesUntil, 'start'),
       minutesUntil,
     }
   }
@@ -140,7 +113,7 @@ const buildUpcomingPreview = (plan: Plan, nowMinutes: number): UpcomingPreviewPl
   if (nowMinutes < endMin) {
     const minutesUntil = endMin - nowMinutes
 
-    if (minutesUntil > UPCOMING_WINDOW_MINUTES) {
+    if (minutesUntil > ScheduleTimeHelper.UPCOMING_WINDOW_MINUTES) {
       return null
     }
 
@@ -153,8 +126,8 @@ const buildUpcomingPreview = (plan: Plan, nowMinutes: number): UpcomingPreviewPl
       ownerAvatarUrl: getOwnerAvatarUrl(plan.ownerKey),
       color: plan.color,
       statusLabel: minutesUntil <= 15 ? '即将结束' : '进行中',
-      statusClass: getStatusClass(minutesUntil <= 15 ? '即将结束' : '进行中'),
-      hint: formatMinutesHint(minutesUntil, 'end'),
+      statusClass: ScheduleTimeHelper.resolveStatusClass(minutesUntil <= 15 ? '即将结束' : '进行中'),
+      hint: ScheduleTimeHelper.formatMinutesHint(minutesUntil, 'end'),
       minutesUntil,
     }
   }
@@ -163,7 +136,7 @@ const buildUpcomingPreview = (plan: Plan, nowMinutes: number): UpcomingPreviewPl
 }
 
 const pickUpcomingPlans = (plans: Plan[]) => {
-  const nowMinutes = getNowMinutes()
+  const nowMinutes = ScheduleTimeHelper.getNowMinutes()
 
   return plans
     .map((plan) => buildUpcomingPreview(plan, nowMinutes))
@@ -199,40 +172,94 @@ const resolveRelativeDate = (timeText: string | null) => {
   return getToday()
 }
 
-const formatDateLabel = (dateText: string) => {
-  const date = new Date(`${dateText}T00:00:00`)
-  return `${date.getMonth() + 1}月${date.getDate()}日`
-}
-
-const formatDraftTimeLabel = (plan: AiPlanDraft) => {
-  if (plan.startTime && plan.endTime) {
-    return `${plan.startTime} - ${plan.endTime}`
-  }
-
-  return plan.timeText || plan.startTime || '未定时间'
-}
-
-const buildAiDraftEntries = (plans: AiPlanDraft[]) =>
-  plans.map((plan, index) => ({
+const batchDraftsToEntries = (drafts: ResolvedBatchDraft[]) =>
+  drafts.map((draft, index) => ({
     id: `draft-${Date.now()}-${index}`,
-    ownerKey: 'me' as OwnerKey,
-    plan,
+    ownerKey: draft.ownerKey,
+    plan: draft.plan,
+    sourceLabel: draft.sourceLabel,
   }))
 
-const toAiDraftCardView = (entry: AiDraftEntry): AiDraftCardView => {
-  const { plan } = entry
-  const date = plan.date || resolveRelativeDate(plan.timeText)
+const entriesToBatchDrafts = (entries: AiDraftEntry[]): ResolvedBatchDraft[] =>
+  entries.map((entry) => ({
+    ownerKey: entry.ownerKey,
+    plan: entry.plan,
+    sourceLabel: entry.sourceLabel,
+  }))
+
+const buildConfirmRefineSnapshot = (
+  entries: AiDraftEntry[],
+  deletePlanIds: string[],
+  updatePayloads: AiUpdatePayload[],
+): AiConfirmRefineSnapshot => ({
+  creates: buildDraftSnapshotForRefine(entries),
+  deletePlanIds,
+  updates: updatePayloads.map((payload) => ({
+    planId: payload.planId,
+    patch: {
+      defaultTag: payload.tag,
+      remark: payload.remark,
+      date: payload.date,
+      startTime: payload.startTime,
+      endTime: payload.endTime,
+      timeText: payload.timeText,
+    },
+  })),
+})
+
+const applyResolvedBatch = (
+  entries: AiDraftEntry[],
+  deletePlanIds: string[],
+  updatePayloads: AiUpdatePayload[],
+) => ({
+  aiDraftEntries: entries,
+  aiDeletePlanIds: deletePlanIds,
+  aiUpdatePayloads: updatePayloads,
+  ...syncAllConfirmCards(entries, deletePlanIds, updatePayloads),
+})
+
+const syncDeleteConfirmCards = (planIds: string[]): AiConfirmCardView[] =>
+  mapDeleteConfirmCards(planIds, getPlans())
+
+const syncUpdateConfirmCards = (payloads: AiUpdatePayload[]): AiConfirmCardView[] =>
+  mapUpdateConfirmCards(payloads, getPlans())
+
+const syncAllConfirmCards = (
+  entries: AiDraftEntry[],
+  deletePlanIds: string[],
+  updatePayloads: AiUpdatePayload[],
+) => {
+  const addCards = entries.flatMap((entry) =>
+    mapAddConfirmCards(
+      [{
+        id: entry.id,
+        plan: entry.plan,
+        sourceLabel: entry.sourceLabel,
+      }],
+      entry.sourceLabel ? 'reuse' : 'create',
+    ),
+  )
 
   return {
-    id: entry.id,
-    tag: resolvePlanTag(plan.defaultTag || plan.section),
-    remark: plan.remark || '无补充备注',
-    dateLabel: formatDateLabel(date),
-    timeLabel: formatDraftTimeLabel(plan),
+    aiConfirmCards: [
+      ...addCards,
+      ...syncDeleteConfirmCards(deletePlanIds),
+      ...syncUpdateConfirmCards(updatePayloads),
+    ],
+    aiConfirmHasDelete: deletePlanIds.length > 0,
   }
 }
 
-const mapAiDraftCards = (entries: AiDraftEntry[]) => entries.map(toAiDraftCardView)
+const resetAiConfirmState = () => ({
+  aiConfirmWarnings: [] as string[],
+  aiConfirmCards: [] as AiConfirmCardView[],
+  aiDeletePlanIds: [] as string[],
+  aiDeleteSummary: '',
+  aiUpdatePayloads: [] as AiUpdatePayload[],
+  aiConfirmHasDelete: false,
+  aiDraftSourceText: '',
+  aiDraftEntries: [] as AiDraftEntry[],
+})
 
 const buildDraftSnapshotForRefine = (entries: AiDraftEntry[]): AiDraftRefineSnapshot[] =>
   entries.map(({ ownerKey, plan }) => ({
@@ -244,13 +271,6 @@ const buildDraftSnapshotForRefine = (entries: AiDraftEntry[]): AiDraftRefineSnap
     endTime: plan.endTime,
     timeText: plan.timeText,
     estimatedMinutes: plan.estimatedMinutes,
-  }))
-
-const mergeRefinedEntries = (previousEntries: AiDraftEntry[], plans: AiPlanDraft[]) =>
-  plans.map((plan, index) => ({
-    id: previousEntries[index]?.id || `draft-${Date.now()}-${index}`,
-    ownerKey: previousEntries[index]?.ownerKey || ('me' as OwnerKey),
-    plan,
   }))
 
 const buildAiDraftScheduleInputs = (entries: AiDraftEntry[]) =>
@@ -356,7 +376,12 @@ Component({
     editingDraftId: '',
     aiDraftSourceText: '',
     aiDraftEntries: [] as AiDraftEntry[],
-    aiDraftCards: [] as AiDraftCardView[],
+    aiConfirmCards: [] as AiConfirmCardView[],
+    aiConfirmWarnings: [] as string[],
+    aiDeletePlanIds: [] as string[],
+    aiDeleteSummary: '',
+    aiUpdatePayloads: [] as AiUpdatePayload[],
+    aiConfirmHasDelete: false,
     editPlanForm: buildEditPlanFormFromDraft(
       {
         title: DEFAULT_PLAN_TAGS[0],
@@ -476,7 +501,7 @@ Component({
           return
         }
 
-        this.createAiPlanDraft(resultText)
+        this.handleVoicePlanCommand(resultText)
       }
 
       speechManager.onError = () => {
@@ -857,7 +882,45 @@ Component({
         },
       })
     },
-    createAiPlanDraft(sourceText: string) {
+    openConfirmFromBatch(
+      sourceText: string,
+      warnings: string[],
+      resolved: ReturnType<typeof resolveBatchConfirmState>,
+      options?: { merge?: boolean },
+    ) {
+      const incomingEntries = batchDraftsToEntries(resolved.drafts)
+
+      if (options?.merge && this.data.isAiDraftVisible) {
+        const merged = mergeBatchConfirmState(
+          {
+            drafts: entriesToBatchDrafts(this.data.aiDraftEntries),
+            deletePlanIds: this.data.aiDeletePlanIds,
+            updatePayloads: this.data.aiUpdatePayloads,
+          },
+          resolved,
+        )
+        const entries = [...this.data.aiDraftEntries, ...incomingEntries]
+
+        openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
+          isAiDraftEditVisible: false,
+          editingDraftId: '',
+          aiDraftSourceText: sourceText,
+          ...applyResolvedBatch(entries, merged.deletePlanIds, merged.updatePayloads),
+          aiConfirmWarnings: [...this.data.aiConfirmWarnings, ...warnings],
+        })
+        return
+      }
+
+      openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
+        ...resetAiConfirmState(),
+        isAiDraftEditVisible: false,
+        editingDraftId: '',
+        aiDraftSourceText: sourceText,
+        ...applyResolvedBatch(incomingEntries, resolved.deletePlanIds, resolved.updatePayloads),
+        aiConfirmWarnings: warnings,
+      })
+    },
+    handleVoicePlanCommand(sourceText: string, options?: { merge?: boolean }) {
       this.setData({
         isAiProcessing: true,
         isAiProcessingClosing: false,
@@ -865,24 +928,34 @@ Component({
         aiProcessingTitle: 'AI 整理中',
       })
 
-      parsePlanTextWithDeepSeek(sourceText, getToday(), getPlanTagNames())
-        .then((result) => {
-          if (result.plans.length === 0) {
+      const today = getToday()
+      const dateScope = inferDateScopeFromText(sourceText, today)
+      const { items: contextItems, truncated } = buildAiPlanContext(dateScope, {
+        ownerFilter: 'me',
+        includeCompleted: true,
+      })
+      const contextIds = new Set(contextItems.map((item) => item.id))
+      const warnings: string[] = []
+
+      if (truncated) {
+        warnings.push('相关计划较多，请尽量说明具体日期')
+      }
+
+      parseVoicePlanCommandWithDeepSeek(sourceText, today, getPlanTagNames(), contextItems)
+        .then((batch) => {
+          const mergedWarnings = [...warnings, ...(batch.warnings || [])]
+          const resolved = resolveBatchConfirmState(batch, contextIds)
+
+          if (!hasBatchOperations(resolved)) {
             wx.showToast({
-              title: '没有识别到计划',
+              title: mergedWarnings[0] || '没有识别到变更',
               icon: 'none',
             })
             return
           }
 
-          const entries = buildAiDraftEntries(result.plans)
-
-          openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
-            isAiDraftEditVisible: false,
-            editingDraftId: '',
-            aiDraftSourceText: sourceText,
-            aiDraftEntries: entries,
-            aiDraftCards: mapAiDraftCards(entries),
+          this.openConfirmFromBatch(batch.sourceText, mergedWarnings, resolved, {
+            merge: options?.merge ?? this.data.isAiDraftVisible,
           })
         })
         .catch((error: Error) => {
@@ -896,13 +969,32 @@ Component({
           this.dismissAiProcessing()
         })
     },
+    refreshConfirmCards() {
+      this.setData(
+        syncAllConfirmCards(
+          this.data.aiDraftEntries,
+          this.data.aiDeletePlanIds,
+          this.data.aiUpdatePayloads,
+        ),
+      )
+    },
     refineAiPlanDrafts(supplementText: string) {
-      const { aiDraftSourceText, aiDraftEntries } = this.data
+      const { aiDraftSourceText, aiDraftEntries, aiDeletePlanIds, aiUpdatePayloads } = this.data
 
-      if (!aiDraftEntries.length) {
+      if (!aiDraftSourceText) {
         this.setData({ voiceMode: 'create' })
         return
       }
+
+      const today = getToday()
+      const combinedSource = `${aiDraftSourceText}。${supplementText}`
+      const dateScope = inferDateScopeFromText(combinedSource, today)
+      const { items: contextItems, truncated } = buildAiPlanContext(dateScope, {
+        ownerFilter: 'me',
+        includeCompleted: true,
+      })
+      const contextIds = new Set(contextItems.map((item) => item.id))
+      const pendingSnapshot = buildConfirmRefineSnapshot(aiDraftEntries, aiDeletePlanIds, aiUpdatePayloads)
 
       this.setData({
         isAiProcessing: true,
@@ -911,30 +1003,35 @@ Component({
         aiProcessingTitle: 'AI 调整中',
       })
 
-      refinePlanDraftsWithDeepSeek(
+      refineVoiceCommandWithDeepSeek(
         aiDraftSourceText,
-        buildDraftSnapshotForRefine(aiDraftEntries),
+        pendingSnapshot,
         supplementText,
-        getToday(),
+        today,
         getPlanTagNames(),
+        contextItems,
       )
-        .then((result) => {
-          if (result.plans.length === 0) {
+        .then((batch) => {
+          const warnings = [...(truncated ? ['相关计划较多，请尽量说明具体日期'] : []), ...(batch.warnings || [])]
+          const resolved = resolveBatchConfirmState(batch, contextIds)
+
+          if (!hasBatchOperations(resolved)) {
             this.setData({ voiceMode: 'create' })
             wx.showToast({
-              title: '没有识别到调整',
+              title: warnings[0] || '没有识别到调整',
               icon: 'none',
             })
             return
           }
 
-          const entries = mergeRefinedEntries(aiDraftEntries, result.plans)
+          const entries = batchDraftsToEntries(resolved.drafts)
 
           openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
             isAiDraftEditVisible: false,
             editingDraftId: '',
-            aiDraftEntries: entries,
-            aiDraftCards: mapAiDraftCards(entries),
+            aiDraftSourceText: batch.sourceText,
+            ...applyResolvedBatch(entries, resolved.deletePlanIds, resolved.updatePayloads),
+            aiConfirmWarnings: warnings,
             voiceMode: 'create',
           })
         })
@@ -954,9 +1051,7 @@ Component({
       const extraData: Record<string, unknown> = {
         isAiDraftEditVisible: false,
         editingDraftId: '',
-        aiDraftSourceText: '',
-        aiDraftEntries: [],
-        aiDraftCards: [],
+        ...resetAiConfirmState(),
       }
 
       if (this.data.isPickerSheetVisible) {
@@ -969,48 +1064,123 @@ Component({
       })
     },
     confirmAiDrafts() {
-      if (this.data.aiDraftEntries.length === 0) {
+      const { aiDraftEntries, aiDeletePlanIds, aiUpdatePayloads } = this.data
+      const hasAdd = aiDraftEntries.length > 0
+      const hasDelete = aiDeletePlanIds.length > 0
+      const hasUpdate = aiUpdatePayloads.length > 0
+
+      if (!hasAdd && !hasDelete && !hasUpdate) {
         this.closeAiDraft()
         return
       }
 
-      const scheduleConflict = findTimedScheduleBatchConflictMessage(
-        buildAiDraftScheduleInputs(this.data.aiDraftEntries),
-      )
+      if (hasAdd) {
+        const scheduleConflict = findTimedScheduleBatchConflictMessage(
+          buildAiDraftScheduleInputs(aiDraftEntries),
+        )
 
-      if (scheduleConflict) {
-        wx.showToast({
-          title: scheduleConflict,
-          icon: 'none',
-        })
-        return
+        if (scheduleConflict) {
+          wx.showToast({
+            title: scheduleConflict,
+            icon: 'none',
+          })
+          return
+        }
       }
 
-      const savedCount = saveAiPlanDrafts(this.data.aiDraftEntries)
+      if (hasDelete) {
+        const removedCount = deletePlansByIds(aiDeletePlanIds)
 
-      if (savedCount === 0) {
-        return
+        if (removedCount === 0) {
+          wx.showToast({
+            title: '删除失败',
+            icon: 'none',
+          })
+          return
+        }
+      }
+
+      if (hasUpdate) {
+        for (const payload of aiUpdatePayloads) {
+          const result = updatePlan(payload.planId, {
+            ownerKey: payload.ownerKey,
+            title: payload.title,
+            tag: payload.tag,
+            tagId: payload.tagId,
+            remark: payload.remark || undefined,
+            date: payload.date,
+            startTime: payload.startTime || undefined,
+            endTime: payload.endTime || undefined,
+            timeText: payload.timeText || undefined,
+            estimatedMinutes: payload.estimatedMinutes,
+          })
+
+          if (!result.ok) {
+            wx.showToast({
+              title: result.message,
+              icon: 'none',
+            })
+            return
+          }
+        }
+      }
+
+      if (hasAdd) {
+        const savedCount = saveAiPlanDrafts(aiDraftEntries)
+
+        if (savedCount === 0) {
+          return
+        }
       }
 
       this.closeAiDraft()
       this.refreshHomeData()
       wx.showToast({
-        title: '已加入日历',
+        title: '已完成调整',
         icon: 'success',
       })
     },
-    deleteAiDraft(e: WechatMiniprogram.BaseEvent) {
+    revokeAiConfirmItem(e: WechatMiniprogram.BaseEvent) {
       const id = e.currentTarget.dataset.id as string
+      const kind = e.currentTarget.dataset.kind as AiConfirmCardView['kind']
+
+      if (kind === 'update') {
+        const payloads = this.data.aiUpdatePayloads.filter((item) => item.planId !== id)
+
+        if (payloads.length === 0 && this.data.aiDraftEntries.length === 0 && this.data.aiDeletePlanIds.length === 0) {
+          this.closeAiDraft()
+          return
+        }
+
+        this.setData({ aiUpdatePayloads: payloads }, () => {
+          this.refreshConfirmCards()
+        })
+        return
+      }
+
+      if (kind === 'delete') {
+        const planIds = this.data.aiDeletePlanIds.filter((planId) => planId !== id)
+
+        if (planIds.length === 0 && this.data.aiDraftEntries.length === 0 && this.data.aiUpdatePayloads.length === 0) {
+          this.closeAiDraft()
+          return
+        }
+
+        this.setData({ aiDeletePlanIds: planIds }, () => {
+          this.refreshConfirmCards()
+        })
+        return
+      }
+
       const entries = this.data.aiDraftEntries.filter((entry) => entry.id !== id)
 
-      if (entries.length === 0) {
+      if (entries.length === 0 && this.data.aiDeletePlanIds.length === 0 && this.data.aiUpdatePayloads.length === 0) {
         this.closeAiDraft()
         return
       }
 
-      this.setData({
-        aiDraftEntries: entries,
-        aiDraftCards: mapAiDraftCards(entries),
+      this.setData({ aiDraftEntries: entries }, () => {
+        this.refreshConfirmCards()
       })
     },
     openAiDraftEdit(e: WechatMiniprogram.BaseEvent) {
@@ -1261,7 +1431,7 @@ Component({
 
       this.setData({
         aiDraftEntries: entries,
-        aiDraftCards: mapAiDraftCards(entries),
+        ...syncAllConfirmCards(entries, this.data.aiDeletePlanIds, this.data.aiUpdatePayloads),
         isAiDraftEditVisible: false,
         editingDraftId: '',
       })

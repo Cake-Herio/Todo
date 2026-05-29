@@ -12,6 +12,7 @@ import { refreshWithLocalFirst, bootstrapSharedSpace } from '../../utils/cloud-s
 import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, MODAL_EXIT_MS, openModal } from '../../utils/modal-dismiss'
+import { ScheduleTimeHelper } from '../../utils/schedule-time'
 
 interface CalendarPlanView {
   id: string
@@ -74,18 +75,6 @@ const buildPlanTone = (plan: Plan): CalendarPlanView['tone'] => {
   return plan.color
 }
 
-const parseTimeToMinutes = (time: string, treatMidnightAsEnd = false) => {
-  const [hourText, minuteText] = time.split(':')
-  let hour = Number(hourText)
-  const minute = Number(minuteText || '0')
-
-  if (treatMidnightAsEnd && hour === 0 && minute === 0) {
-    hour = 24
-  }
-
-  return hour * 60 + minute
-}
-
 const compareCalendarDayPlans = (
   a: Plan,
   b: Plan,
@@ -95,22 +84,22 @@ const compareCalendarDayPlans = (
 ) => {
   const rank = (plan: Plan) => {
     if (plan.status === 'completed') {
-      const startSort = plan.startTime ? parseTimeToMinutes(plan.startTime) : Number.MAX_SAFE_INTEGER
+      const startSort = plan.startTime ? ScheduleTimeHelper.parseToMinutes(plan.startTime) : Number.MAX_SAFE_INTEGER
       return { group: 3, sort: startSort }
     }
 
     if (plan.status === 'overdue') {
       return {
         group: 0,
-        sort: plan.startTime ? parseTimeToMinutes(plan.startTime) : 0,
+        sort: plan.startTime ? ScheduleTimeHelper.parseToMinutes(plan.startTime) : 0,
       }
     }
 
     const hasTime = Boolean(plan.startTime && plan.endTime)
 
     if (hasTime && dateText === todayText) {
-      const startMin = parseTimeToMinutes(plan.startTime!)
-      const endMin = parseTimeToMinutes(plan.endTime!, true)
+      const startMin = ScheduleTimeHelper.parseToMinutes(plan.startTime!)
+      const endMin = ScheduleTimeHelper.parseToMinutes(plan.endTime!, true)
 
       if (nowMinutes < endMin) {
         const minutesUntil = nowMinutes < startMin ? startMin - nowMinutes : endMin - nowMinutes
@@ -121,7 +110,7 @@ const compareCalendarDayPlans = (
     }
 
     if (hasTime) {
-      return { group: 1, sort: parseTimeToMinutes(plan.startTime!) }
+      return { group: 1, sort: ScheduleTimeHelper.parseToMinutes(plan.startTime!) }
     }
 
     if (plan.status === 'pending' || plan.status === 'in_progress') {
@@ -143,8 +132,7 @@ const compareCalendarDayPlans = (
 
 const sortCalendarDayPlans = (plans: Plan[], dateText: string) => {
   const todayText = getToday()
-  const now = new Date()
-  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const nowMinutes = ScheduleTimeHelper.getNowMinutes()
 
   return [...plans].sort((a, b) => compareCalendarDayPlans(a, b, dateText, todayText, nowMinutes))
 }

@@ -114,30 +114,68 @@
     <block wx:if="{{!isAiDraftEditVisible}}">
       <view class="ai-draft-header">
         <view>
-          <view class="ai-draft-title">生成计划草稿</view>
-          <view class="muted">确认后会加入日历，可在日计划里继续调整</view>
+          <view class="ai-draft-title">确认变更</view>
+          <view class="muted">请确认以下计划调整</view>
+          <view wx:if="{{aiDraftSourceText}}" class="ai-confirm-source-text">{{aiDraftSourceText}}</view>
         </view>
         <view class="ai-draft-close" catchtap="closeAiDraft">×</view>
       </view>
 
+      <view wx:if="{{aiConfirmWarnings.length}}" class="ai-confirm-warnings">
+        <view wx:for="{{aiConfirmWarnings}}" wx:key="*this" class="ai-confirm-warning-item">{{item}}</view>
+      </view>
+
       <scroll-view class="ai-draft-list" scroll-y>
-        <view wx:for="{{aiDraftCards}}" wx:key="id" class="ai-draft-card">
-          <view class="ai-draft-top-row">
-            <view class="ai-draft-meta-row">
-              <plan-tag-pill name="{{item.tag}}" size="sm" />
-              <view class="ai-draft-date">{{item.dateLabel}}</view>
-              <view class="ai-draft-time">{{item.timeLabel}}</view>
-            </view>
-            <view class="ai-draft-card-actions">
-              <view class="ai-draft-icon-btn" catchtap="openAiDraftEdit" data-id="{{item.id}}">
-                <image class="ai-draft-icon" src="/images/icons/edit.svg" mode="aspectFit"></image>
+        <view
+          wx:for="{{aiConfirmCards}}"
+          wx:key="id"
+          class="ai-confirm-card ai-draft-card {{item.kind === 'delete' ? 'is-delete' : ''}} {{item.kind === 'update' ? 'is-update' : ''}} {{item.kind === 'add' ? 'is-add' : ''}}"
+        >
+          <view class="ai-confirm-card-glow"></view>
+          <view class="ai-confirm-card-inner">
+            <block wx:if="{{item.kind === 'update'}}">
+              <view class="ai-draft-top-row">
+                <view class="ai-draft-meta-row">
+                  <plan-tag-pill name="{{item.tag}}" size="sm" />
+                </view>
+                <view class="ai-draft-card-actions">
+                  <view class="ai-draft-icon-btn danger" catchtap="revokeAiConfirmItem" data-id="{{item.id}}" data-kind="{{item.kind}}">
+                    <image class="ai-draft-icon" src="/images/icons/delete.svg" mode="aspectFit"></image>
+                  </view>
+                </view>
               </view>
-              <view class="ai-draft-icon-btn danger" catchtap="deleteAiDraft" data-id="{{item.id}}">
-                <image class="ai-draft-icon" src="/images/icons/delete.svg" mode="aspectFit"></image>
+              <view class="ai-confirm-diff">
+                <view
+                  wx:for="{{item.diffRows}}"
+                  wx:for-item="diff"
+                  wx:key="label"
+                  class="ai-confirm-diff-row"
+                >
+                  <view class="ai-confirm-diff-label">{{diff.label}}</view>
+                  <view class="ai-confirm-diff-before">{{diff.before}}</view>
+                  <view class="ai-confirm-diff-arrow">→</view>
+                  <view class="ai-confirm-diff-after {{diff.changed ? 'is-changed' : ''}}">{{diff.after}}</view>
+                </view>
               </view>
-            </view>
+            </block>
+
+            <block wx:else>
+              <view class="ai-draft-top-row">
+                <view class="ai-draft-meta-row">
+                  <plan-tag-pill name="{{item.tag}}" size="sm" />
+                  <view class="ai-draft-date">{{item.dateLabel}}</view>
+                  <view class="ai-draft-time">{{item.timeLabel}}</view>
+                </view>
+                <view class="ai-draft-card-actions">
+                  <view class="ai-draft-icon-btn danger" catchtap="revokeAiConfirmItem" data-id="{{item.id}}" data-kind="{{item.kind}}">
+                    <image class="ai-draft-icon" src="/images/icons/delete.svg" mode="aspectFit"></image>
+                  </view>
+                </view>
+              </view>
+              <view wx:if="{{item.sourceLabel}}" class="ai-confirm-source">{{item.sourceLabel}}</view>
+              <view class="ai-draft-remark">{{item.remark}}</view>
+            </block>
           </view>
-          <view class="ai-draft-remark">{{item.remark}}</view>
         </view>
       </scroll-view>
 
@@ -154,8 +192,11 @@
             <text class="ai-draft-action-subtitle">长按说出修改意见</text>
           </view>
         </button>
-        <button class="ai-draft-action-button primary-button" bindtap="confirmAiDrafts">
-          <text class="ai-draft-action-title">加入日历</text>
+        <button
+          class="ai-draft-action-button primary-button {{aiConfirmHasDelete ? 'danger' : ''}}"
+          bindtap="confirmAiDrafts"
+        >
+          <text class="ai-draft-action-title">确定</text>
         </button>
       </view>
     </block>
