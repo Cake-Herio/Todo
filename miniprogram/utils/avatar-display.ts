@@ -7,7 +7,7 @@ const FALLBACK_AVATARS = {
 
 const avatarUrlCache = new Map<string, string>()
 
-/** 供 <image src> 使用：未解析的 cloud:// 一律回落到占位图，避免空白 */
+/** 供 <image src> 使用：优先取缓存的 HTTPS 链接，未命中则直接用 cloud://（微信 <image> 原生支持） */
 export const toDisplayAvatarUrl = (avatarUrl: string, fallback = FALLBACK_AVATARS.partner) => {
   if (!avatarUrl) {
     return fallback
@@ -17,7 +17,7 @@ export const toDisplayAvatarUrl = (avatarUrl: string, fallback = FALLBACK_AVATAR
     return avatarUrl
   }
 
-  return avatarUrlCache.get(avatarUrl) || fallback
+  return avatarUrlCache.get(avatarUrl) || avatarUrl
 }
 
 export const getFallbackAvatarUrl = (owner: 'me' | 'partner') => FALLBACK_AVATARS[owner]

@@ -261,6 +261,7 @@ const syncAllConfirmCards = (
 
 const resetAiConfirmState = () => ({
   aiChatMessages: [] as AiChatMessage[],
+  chatScrollTop: 0,
   aiConfirmWarnings: [] as string[],
   aiConfirmCards: [] as AiConfirmCardView[],
   aiDeletePlanIds: [] as string[],
@@ -385,6 +386,7 @@ Component({
     isAiDraftEditVisible: false,
     editingDraftId: '',
     aiChatMessages: [] as AiChatMessage[],
+    chatScrollTop: 0,
     aiDraftSourceText: '',
     aiDraftEntries: [] as AiDraftEntry[],
     aiConfirmCards: [] as AiConfirmCardView[],
@@ -565,11 +567,12 @@ Component({
     },
     syncHomeChrome() {
       const show = !this.data.needProfileLogin && this.data.homeContentVisible
+      const hasActiveFocus = Boolean(wx.getStorageSync('myforest_local_focus_session'))
 
-      if (show) {
-        wx.showTabBar({ animation: this.data.homeRevealActive })
+      if (show && !hasActiveFocus) {
+        wx.showTabBar({ animation: true })
       } else {
-        wx.hideTabBar({ animation: false })
+        wx.hideTabBar({ animation: true })
       }
     },
     revealHomeContent() {
@@ -648,6 +651,25 @@ Component({
         }
       }
 
+      // 云 session 不存在时，检查本地存储（solo 模式 / 云同步延迟兜底）
+      if (!self) {
+        const localRaw = wx.getStorageSync('myforest_local_focus_session') as Record<string, unknown> | ''
+        if (localRaw && typeof localRaw === 'object' && localRaw.focusStartedAt) {
+          self = {
+            name: '我',
+            status: localRaw.isPaused ? '暂停' : '专注',
+            duration: '进行中',
+            avatarUrl: selfAvatarFallback,
+            restore: {
+              sessionStartedAt: localRaw.focusStartedAt as number,
+              accumulatedSeconds: Math.floor((localRaw.accumulatedElapsedMs as number || 0) / 1000),
+              segmentStartedAt: (localRaw.isPaused ? 0 : (localRaw.focusSegmentStartedAt || localRaw.savedAt)) as number,
+              isPaused: Boolean(localRaw.isPaused),
+            },
+          }
+        }
+      }
+
       const partnerVisible = Boolean(partner)
       if (partnerVisible !== this.data.partnerFocusVisible) {
         updates.partnerFocusVisible = partnerVisible
@@ -688,6 +710,17 @@ Component({
 
       if (Object.keys(updates).length) {
         this.setData(updates)
+      }
+
+      // 有活跃计时则立即隐藏 tabBar；计时结束后延迟抬起，避免闪现
+      if ('selfFocusVisible' in updates) {
+        if (updates.selfFocusVisible) {
+          wx.hideTabBar({ animation: true })
+        } else {
+          setTimeout(() => {
+            wx.showTabBar({ animation: true })
+          }, 320)
+        }
       }
 
       void this.prefetchPartnerAvatar()
@@ -927,22 +960,52 @@ Component({
 
       const allErrors = [...dsErrors, ...localResult.errors]
 
+      // --- filter creates by AI errors (remove entries the AI flagged as invalid) ---
+      const aiErrorCreateIndices = new Set(
+        dsErrors
+          .map((e) => e.target)
+          .filter((t): t is string => Boolean(t))
+          .map((t) => {
+            const match = t.match(/^creates\[(\d+)\]$/)
+            return match ? Number(match[1]) : -1
+          })
+          .filter((i) => i >= 0),
+      )
+
       // --- filter creates by local validation ---
       const validIdx = new Set(localResult.validCreateIndices)
-      const filteredEntries = validIdx.size === incomingEntries.length
-        ? incomingEntries
-        : incomingEntries.filter((_, i) => validIdx.has(i))
+      const filteredEntries = incomingEntries.filter((_, i) => {
+        if (aiErrorCreateIndices.has(i)) return false
+        if (validIdx.size > 0 && !validIdx.has(i)) return false
+        return true
+      })
 
-      // --- filter updates by local validation ---
+      // --- filter updates by AI errors + local validation ---
+      const aiErrorUpdateIndices = new Set(
+        dsErrors
+          .map((e) => e.target)
+          .filter((t): t is string => Boolean(t))
+          .map((t) => {
+            const match = t.match(/^updates\[(\d+)\]$/)
+            return match ? Number(match[1]) : -1
+          })
+          .filter((i) => i >= 0),
+      )
       const validUpIdx = new Set(localResult.validUpdateIndices)
-      const filteredUpdates = validUpIdx.size === resolved.updatePayloads.length
-        ? resolved.updatePayloads
-        : resolved.updatePayloads.filter((_, i) => validUpIdx.has(i))
+      const filteredUpdates = resolved.updatePayloads.filter((_, i) => {
+        if (aiErrorUpdateIndices.has(i)) return false
+        if (validUpIdx.size > 0 && !validUpIdx.has(i)) return false
+        return true
+      })
 
       // --- build chat messages ---
       const now = Date.now()
       const newMessages: AiChatMessage[] = []
-      newMessages.push({ id: `user-${now}`, role: 'user', text: sourceText, at: now })
+
+      // merge 模式下用户消息已在调用方提前追加，这里只追加 AI 反馈和错误
+      if (!options?.merge) {
+        newMessages.push({ id: `user-${now}`, role: 'user', text: sourceText, at: now })
+      }
 
       const hasOps = filteredEntries.length > 0 || resolved.deletePlanIds.length > 0 || filteredUpdates.length > 0
       if (hasOps) {
@@ -977,6 +1040,7 @@ Component({
           editingDraftId: '',
           aiDraftSourceText: sourceText,
           aiChatMessages: chatMessages,
+          chatScrollTop: ((this as any)._chatScrollSeq = ((this as any)._chatScrollSeq || 99999) + 1),
           ...applyResolvedBatch(entries, merged.deletePlanIds, merged.updatePayloads),
           aiConfirmWarnings: warnings,
         })
@@ -986,6 +1050,7 @@ Component({
       openModal(this, 'isAiDraftVisible', 'isAiDraftClosing', {
         ...resetAiConfirmState(),
         aiChatMessages: chatMessages,
+        chatScrollTop: ((this as any)._chatScrollSeq = ((this as any)._chatScrollSeq || 99999) + 1),
         isAiDraftEditVisible: false,
         editingDraftId: '',
         aiDraftSourceText: sourceText,
@@ -1103,8 +1168,8 @@ Component({
           const userMsg: AiChatMessage = { id: `user-${now}`, role: 'user', text: supplementText, at: now }
           const chatMessages = [...this.data.aiChatMessages, userMsg]
 
-          this.setData({ aiChatMessages: chatMessages }, () => {
-            this.openConfirmFromBatch(batch.sourceText, warnings, resolved, dsErrors, { merge: false })
+          this.setData({ aiChatMessages: chatMessages, chatScrollTop: ((this as any)._chatScrollSeq = ((this as any)._chatScrollSeq || 99999) + 1) }, () => {
+            this.openConfirmFromBatch(batch.sourceText, warnings, resolved, dsErrors, { merge: true })
           })
         })
         .catch((error: Error) => {

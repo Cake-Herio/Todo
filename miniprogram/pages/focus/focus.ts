@@ -100,12 +100,66 @@ const getHintText = (isRunning: boolean, isPaused: boolean) => {
   return '保持稳定呼吸，慢慢推进'
 }
 
-const FOCUS_LEAVE_MESSAGE = '计时进行中，请先点击结束'
 const MIN_FOCUS_SECONDS = 5
+
+interface LocalFocusSession {
+  focusStartedAt: number
+  accumulatedElapsedMs: number
+  focusSegmentStartedAt: number
+  isPaused: boolean
+  selectedTag: string
+  detail: string
+  linkedPlanId: string
+  savedAt: number
+}
+
+const LOCAL_FOCUS_KEY = 'myforest_local_focus_session'
+const LOCAL_FOCUS_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 小时过期
+
+const saveLocalFocusSession = (component: WechatMiniprogram.Component.TrivialInstance) => {
+  const data = component.data as Record<string, unknown>
+  // 只在计时真正活跃时保存（running 或 morphing）；已结束 / idle 不保存
+  if (!data.isRunning && data.controlsPhase !== 'morphing') {
+    return
+  }
+
+  const inst = component as unknown as Record<string, unknown>
+
+  const session: LocalFocusSession = {
+    focusStartedAt: inst.focusStartedAt as number,
+    accumulatedElapsedMs: inst.accumulatedElapsedMs as number,
+    focusSegmentStartedAt: inst.focusSegmentStartedAt as number,
+    isPaused: data.isPaused as boolean,
+    selectedTag: (data.selectedTag as string) || '',
+    detail: (data.detail as string) || '',
+    linkedPlanId: (data.linkedPlanId as string) || '',
+    savedAt: Date.now(),
+  }
+
+  wx.setStorageSync(LOCAL_FOCUS_KEY, session)
+}
+
+const getLocalFocusSession = (): LocalFocusSession | null => {
+  const saved = wx.getStorageSync(LOCAL_FOCUS_KEY) as LocalFocusSession | ''
+  if (!saved || typeof saved !== 'object') {
+    return null
+  }
+
+  if (Date.now() - saved.savedAt > LOCAL_FOCUS_MAX_AGE_MS) {
+    wx.removeStorageSync(LOCAL_FOCUS_KEY)
+    return null
+  }
+
+  return saved
+}
+
+const clearLocalFocusSession = () => {
+  wx.removeStorageSync(LOCAL_FOCUS_KEY)
+}
 
 const lockFocusPage = () => {
   wx.enableAlertBeforeUnload({
-    message: FOCUS_LEAVE_MESSAGE,
+    message: '计时进行中，请先点击结束',
   })
 }
 
@@ -161,6 +215,7 @@ Component({
       this.updateIdleTagScrollFades()
     },
     detached() {
+      saveLocalFocusSession(this)
       this.stopTick()
       unlockFocusPage()
     },
@@ -178,15 +233,6 @@ Component({
         if (!this.timer) {
           this.startTick()
         }
-      }
-
-      if (this.data.isRunning && !this.data.canLeave) {
-        lockFocusPage()
-        this.setData({ backGuardShow: true })
-      } else if (this.data.controlsPhase === 'morphing') {
-        lockFocusPage()
-      } else {
-        unlockFocusPage()
       }
     },
   },
@@ -229,13 +275,16 @@ Component({
       this.leavingFocus = false
       unlockFocusPage()
       this.initPageInsets()
+
+      const isResuming = options?.resume === '1'
+
       this.setData({
         backGuardShow: true,
-        controlsPhase: 'idle',
-        hintText: '准备好后再开始',
+        controlsPhase: isResuming ? 'active' : 'idle',
+        hintText: isResuming ? '正在恢复...' : '准备好后再开始',
         isRunning: false,
         isPaused: false,
-        canLeave: false,
+        canLeave: isResuming,
       })
 
       const planId = options?.planId || ''
@@ -266,12 +315,9 @@ Component({
         return
       }
 
-      if (this.data.canLeave || this.data.controlsPhase === 'idle') {
-        this.leaveFocusPage()
-        return
-      }
-
-      this.setData({ backGuardShow: true })
+      // 始终阻止侧滑返回手势：不做任何操作，page-container 的 show=true 会阻止退出。
+      // 用户应通过页面上的「退出」按钮（exitFocus）或完成专注后来离开页面。
+      // 所有离开操作都应通过 leaveFocusPage() 以编程方式完成（wx.navigateBack / wx.switchTab）。
     },
     exitFocus() {
       if (this.data.controlsPhase !== 'idle') {
@@ -293,6 +339,7 @@ Component({
       }
 
       this.leavingFocus = true
+      saveLocalFocusSession(this)
       unlockFocusPage()
       this.stopTick()
 
@@ -412,39 +459,79 @@ Component({
         return
       }
 
+      const resetToIdle = () => {
+        this.setData({
+          controlsPhase: 'idle',
+          hintText: '准备好后再开始',
+          isRunning: false,
+          isPaused: false,
+          canLeave: false,
+        })
+      }
+
+      // 优先尝试云 session（sharedSpace 模式）
       try {
         const ownFocus = await fetchOwnFocusPresence()
-        if (!ownFocus) {
+        if (ownFocus) {
+          const { restore } = ownFocus
+          this.stopTick()
+          this.leavingFocus = false
+          this.focusStartedAt = restore.sessionStartedAt
+          this.accumulatedElapsedMs = restore.accumulatedSeconds * 1000
+          this.focusSegmentStartedAt = restore.isPaused ? 0 : restore.segmentStartedAt || Date.now()
+
+          this.setData({
+            controlsPhase: 'active',
+            backGuardShow: true,
+            canLeave: true,
+            isRunning: true,
+            isPaused: restore.isPaused,
+            hintText: getHintText(true, restore.isPaused),
+          })
+
+          clearLocalFocusSession()
+
+          const targetSeconds = this.getElapsedSeconds()
+          this.animateTimerRestore(targetSeconds, restore.isPaused)
+
+          this.syncFocusPresence()
           return
         }
+      } catch (error) {
+        console.warn('[focus] cloud restore failed, trying local', error)
+      }
 
-        const { restore } = ownFocus
+      // 云 session 不存在 → 回落本地存储（solo 模式兜底）
+      const local = getLocalFocusSession()
+      if (local) {
         this.stopTick()
         this.leavingFocus = false
-        this.focusStartedAt = restore.sessionStartedAt
-        this.accumulatedElapsedMs = restore.accumulatedSeconds * 1000
-        this.focusSegmentStartedAt = restore.isPaused ? 0 : restore.segmentStartedAt || Date.now()
-        lockFocusPage()
+        this.focusStartedAt = local.focusStartedAt
+        this.accumulatedElapsedMs = local.accumulatedElapsedMs
+        // 本地 session 如果是 running 状态，从保存时刻起算已过时间
+        this.focusSegmentStartedAt = local.isPaused ? 0 : local.focusSegmentStartedAt || local.savedAt
 
         this.setData({
           controlsPhase: 'active',
           backGuardShow: true,
-          canLeave: false,
+          canLeave: true,
           isRunning: true,
-          isPaused: restore.isPaused,
-          hintText: getHintText(true, restore.isPaused),
+          isPaused: local.isPaused,
+          selectedTag: local.selectedTag,
+          detail: local.detail,
+          linkedPlanId: local.linkedPlanId,
+          hintText: getHintText(true, local.isPaused),
         })
 
-        this.refreshElapsedDisplay()
-
-        if (!restore.isPaused) {
-          this.startTick()
-        }
+        const targetSeconds = this.getElapsedSeconds()
+        this.animateTimerRestore(targetSeconds, local.isPaused)
 
         this.syncFocusPresence()
-      } catch (error) {
-        console.warn('[focus] restore session failed', error)
+        return
       }
+
+      // 无任何可恢复的 session
+      resetToIdle()
     },
     startTimer() {
       if (this.data.controlsPhase !== 'idle') {
@@ -457,18 +544,28 @@ Component({
       this.accumulatedElapsedMs = 0
       this.focusSegmentStartedAt = 0
       this.activitySmithSyncedMinute = -1
-      lockFocusPage()
 
       this.setData({
         controlsPhase: 'morphing',
         backGuardShow: true,
-        canLeave: false,
+        canLeave: true,
         isPaused: false,
         elapsedSeconds: 0,
         timeText: '00:00:00',
         ringAngle: 0,
         hintText: getHintText(true, false),
       })
+
+      // 立即创建云端 session，即使用户在 morph 动画期间退出也能恢复
+      if (canPublishFocusPresence()) {
+        void publishFocusPresence({
+          sessionStartedAt: this.focusStartedAt,
+          accumulatedSeconds: 0,
+          segmentStartedAt: 0,
+          isPaused: false,
+        })
+      }
+      this.notifyRoomFocusEvent('start')
 
       setTimeout(() => {
         this.focusSegmentStartedAt = Date.now()
@@ -478,7 +575,6 @@ Component({
         })
         this.startTick()
         this.syncFocusPresence()
-        this.notifyRoomFocusEvent('start')
       }, MORPH_DURATION_MS)
     },
     onMorphLeftTap() {
@@ -540,6 +636,7 @@ Component({
 
       this.stopTick()
       unlockFocusPage()
+      clearLocalFocusSession()
       this.notifyRoomFocusEvent('end')
       void clearFocusPresence()
       this.clearActivitySmithPresence(elapsedSeconds)
@@ -683,6 +780,49 @@ Component({
       clearInterval(this.timer)
       this.timer = 0
     },
+    /**
+     * 从 0 平滑动画过渡到目标秒数（恢复计时时消除数字跳变）
+     */
+    animateTimerRestore(targetSeconds: number, isPaused: boolean) {
+      if (targetSeconds <= 0) {
+        this.refreshElapsedDisplay()
+        if (!isPaused) {
+          this.startTick()
+        }
+        return
+      }
+
+      this.stopTick()
+
+      const DURATION = Math.min(targetSeconds * 18, 560)
+      const startMs = Date.now()
+
+      const step = () => {
+        const elapsed = Date.now() - startMs
+        const progress = Math.min(elapsed / DURATION, 1)
+        // ease-out 曲线：快到终点时减速
+        const eased = 1 - Math.pow(1 - progress, 3)
+        const displaySeconds = Math.round(targetSeconds * eased)
+
+        this.setData({
+          elapsedSeconds: displaySeconds,
+          timeText: formatSeconds(displaySeconds),
+          ringAngle: getRingAngle(displaySeconds),
+        })
+
+        if (progress < 1) {
+          this.timer = setTimeout(step, 16) as unknown as number
+        } else {
+          // 动画结束，切回实时计时
+          this.refreshElapsedDisplay()
+          if (!isPaused) {
+            this.startTick()
+          }
+        }
+      }
+
+      step()
+    },
     selectTag(e: WechatMiniprogram.BaseEvent) {
       const tag = e.currentTarget.dataset.tag as string
 
@@ -775,6 +915,7 @@ Component({
         onDismissed: () => {
           this.stopTick()
           unlockFocusPage()
+          clearLocalFocusSession()
           this.notifyRoomFocusEvent('end')
           void clearFocusPresence()
           this.clearActivitySmithPresence()

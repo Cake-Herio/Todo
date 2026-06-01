@@ -13,8 +13,8 @@ const PLANS_COLLECTION = 'plans'
 const FOCUS_COLLECTION = 'bark_focus_sessions'
 const PUSH_LOG_COLLECTION = 'bark_push_logs'
 
-/** 开始计时时推送（需已选标签）；不含累计时长 */
-const BARK_PUSH_ON_FOCUS_START = true
+/** 开始计时时不再推送给本人（自己知道已开始，避免语义重复） */
+const BARK_PUSH_ON_FOCUS_START = false
 
 /** 云存储配图 fileID（免费版无需「所有用户可读」，云函数内 getTempFileURL 换取临时 HTTPS） */
 const BARK_PUSH_CLOUD_FILE_ID =

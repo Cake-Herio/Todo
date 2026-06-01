@@ -1,6 +1,7 @@
 import { notifyCloudMutate } from './cloud-bridge'
 import { resolveTagBindingFromList } from './tag-binding'
 import { getSession } from './session'
+import { getStableAvatarDisplayUrl } from './avatar-display'
 import { ScheduleTimeHelper } from './schedule-time'
 
 export type OwnerKey = 'me' | 'partner'
@@ -78,14 +79,15 @@ export const getOwnerAvatarUrl = (ownerKey: OwnerKey) => {
 
   if (ownerKey === 'me') {
     if (session?.profileCompleted && session.avatarUrl) {
-      return session.avatarUrl
+      // 优先取已缓存的 HTTPS 链接；未缓存则用原始 cloud:// （<image> 可原生渲染）
+      return getStableAvatarDisplayUrl(session.avatarUrl) || session.avatarUrl
     }
   }
 
-  if (ownerKey === 'partner' && session?.partnerAvatarUrl) {
-    const url = session.partnerAvatarUrl
-    if (!url.startsWith('cloud://')) {
-      return url
+  if (ownerKey === 'partner') {
+    const raw = session?.partnerAvatarUrl || ''
+    if (raw) {
+      return getStableAvatarDisplayUrl(raw) || raw
     }
   }
 

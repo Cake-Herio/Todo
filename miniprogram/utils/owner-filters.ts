@@ -170,6 +170,16 @@ export const refreshSpaceMembersFromCloud = async () => {
       if (partnerAvatarUrl.startsWith('cloud://')) {
         void resolveAvatarDisplayUrl(partnerAvatarUrl)
       }
+    }
+
+    // 同时解析自己的头像，确保日历等页面的 <image> 能命中缓存
+    const myAvatar = session.avatarUrl
+    if (myAvatar?.startsWith('cloud://')) {
+      void resolveAvatarDisplayUrl(myAvatar)
+    }
+
+    if (!hasPartner && !membersTrusted) {
+      // 无 partner 且数据不可信，不做清除
     } else if (
       membersTrusted &&
       !hasPartner &&

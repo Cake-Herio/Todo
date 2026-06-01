@@ -125,13 +125,14 @@
         class="ai-chat-thread"
         scroll-y
         enhanced
-        show-scrollbar="{{aiChatMessages.length > 4}}"
-        scroll-into-view="{{'ai-chat-end'}}"
+        show-scrollbar="{{false}}"
+        scroll-with-animation
+        scroll-top="{{chatScrollTop}}"
       >
         <view
           wx:for="{{aiChatMessages}}"
           wx:key="id"
-          class="ai-chat-row {{item.role === 'user' ? 'is-user' : ''}} {{item.role === 'error' ? 'is-error' : ''}}"
+          class="ai-chat-row {{item.role === 'user' ? 'is-user' : ''}} {{item.role === 'error' ? 'is-error' : ''}} {{item.role === 'assistant' ? 'is-assistant' : ''}}"
         >
           <view class="ai-chat-bubble">{{item.text}}</view>
         </view>
@@ -403,8 +404,8 @@
   <button class="action-card focus-button" bindtap="goFocus">
     <view class="action-icon action-icon-clock"></view>
     <view class="action-copy">
-      <view class="action-title">开始计时</view>
-      <view class="action-subtitle">正计时专注</view>
+      <view class="action-title">{{selfFocusVisible ? '回到计时' : '开始计时'}}</view>
+      <view class="action-subtitle">{{selfFocusVisible ? '正在专注中' : '正计时专注'}}</view>
     </view>
   </button>
 </view>

@@ -1016,18 +1016,22 @@ page {
 }
 
 .ai-draft-panel {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 680rpx;
-  max-height: 82vh;
+  max-height: 88vh;
   padding: 34rpx 28rpx 28rpx;
   border-radius: 38rpx;
   background: #fffdf7;
   box-shadow: 0 28rpx 72rpx rgba(47, 58, 52, 0.22);
   box-sizing: border-box;
+  overflow: hidden;
   animation: modalPopIn 0.22s ease-out;
 }
 
 .ai-draft-header {
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1059,8 +1063,10 @@ page {
 }
 
 .ai-draft-list {
-  max-height: 680rpx;
-  margin-top: 26rpx;
+  flex: 1;
+  min-height: 0;
+  max-height: 420rpx;
+  margin-top: 18rpx;
 }
 
 .ai-draft-card {
@@ -1222,33 +1228,31 @@ page {
 }
 
 .ai-chat-thread {
-  max-height: 240rpx;
-  margin-top: 16rpx;
+  flex-shrink: 0;
+  max-height: 160rpx;
+  margin-top: 14rpx;
   padding: 0 4rpx;
 }
 
 .ai-chat-row {
   display: flex;
-  margin-bottom: 10rpx;
+  margin-bottom: 12rpx;
 }
 
 .ai-chat-row.is-user {
   justify-content: flex-end;
 }
 
+.ai-chat-row.is-assistant,
 .ai-chat-row.is-error {
   justify-content: flex-start;
 }
 
-.ai-chat-row:not(.is-user):not(.is-error) {
-  justify-content: flex-start;
-}
-
 .ai-chat-bubble {
-  max-width: 80%;
+  max-width: 86%;
   padding: 12rpx 20rpx;
-  border-radius: 22rpx;
-  font-size: 24rpx;
+  border-radius: 20rpx;
+  font-size: 23rpx;
   line-height: 1.45;
   word-break: break-all;
 }
@@ -1256,19 +1260,20 @@ page {
 .ai-chat-row.is-user .ai-chat-bubble {
   background: #e4f2e9;
   color: #2f3a34;
-  border-bottom-right-radius: 8rpx;
+  border-bottom-right-radius: 6rpx;
 }
 
-.ai-chat-row:not(.is-user):not(.is-error) .ai-chat-bubble {
+.ai-chat-row.is-assistant .ai-chat-bubble {
   background: #f4f0e8;
   color: #2f3a34;
-  border-bottom-left-radius: 8rpx;
+  border-bottom-left-radius: 6rpx;
 }
 
 .ai-chat-row.is-error .ai-chat-bubble {
   background: #fff0ef;
   color: #c94b4b;
-  border-bottom-left-radius: 8rpx;
+  border-bottom-left-radius: 6rpx;
+  font-size: 22rpx;
 }
 
 .ai-confirm-source,
@@ -1435,6 +1440,7 @@ page {
 }
 
 .ai-draft-actions {
+  flex-shrink: 0;
   display: flex;
   gap: 18rpx;
   margin-top: 24rpx;

@@ -165,14 +165,19 @@ const voiceCommandSystemPrompt = `你是一个计划表语音指令 JSON 解析�
 11. 复用时 reusePlans 应输出合并 patch 后的完整目标草稿。
 12. 时段合法性：若同时给出 startTime 与 endTime，必须 startTime < endTime（00:00 为 24:00）。不满足时该条不进 creates/updates/reusePlans，在 errors 追加 { "code": "INVALID_TIME_RANGE", "message": "「标签名」14:00-13:00 开始时间不能晚于结束时间", "target": "creates[0]" }。
 13. 时段重叠：与「相关日期已有计划」或同批其他待生效条目时段重叠的，该条不进 creates/updates/reusePlans，errors 追加 { "code": "TIME_OVERLAP", "message": "「A」09:00-10:00 与「B」09:30-11:00 时段重叠", "target": "creates[0]" }。重叠判定：aStart < bEnd && bStart < aEnd。
-14. 若 creates/updates/reuses 全空且 delete 为 null，errors 至少一条说明原因（可复用 warnings）。
-15. errors 必须是 JSON 数组，每项含 code/message；禁止把错误写进 creates。`
+14. 无法识别：若用户指令模糊、无法确定具体操作，返回 { "code": "PARSE_UNCERTAIN", "message": "说明原因" }，此时 creates/updates/reuses 必须全部为空数组、delete 为 null。绝对不能「猜一个」放进 creates。
+15. 修改 vs 新增：用户说「修改/改/换成/调整」某个已有计划时，必须用 updates（填入该计划的 planId + patch），绝对禁止新增一条 creates。仅当用户明确说「再加/新增/另外」时才用 creates。
+16. 若 creates/updates/reuses 全空且 delete 为 null，errors 至少一条说明原因（可复用 warnings）。
+17. errors 必须是 JSON 数组，每项含 code/message/target；禁止把错误写进 creates。`
 
 const refineBatchSystemPrompt = `${voiceCommandSystemPrompt}
 
-12. 这是「继续调整」场景：你会收到最初口述、当前待确认变更 JSON、用户最新补充。
-13. 请综合三者输出完整修订后的 batch_plans，可同时保留/新增/删除/修改多条。
-14. sourceText 返回「最初口述 + 最新补充」的合并摘要。`
+12. 这是「继续调整」场景：你会收到最初口述、当前待确认变更 JSON（含 creates/deletePlanIds/updates）、用户最新补充。
+13. 必须综合三者输出完整修订后的 batch_plans。核心原则：优先修改已有条目，而非盲目新增。
+14. 当用户说「改那个」「刚才那个」「把那个换成」等指代性语言时，应在对应条目上做 updates 或修改 creates 中的草稿（调整 date/startTime/endTime/remark 等字段），禁止新增一条。
+15. 「当前待确认变更」中的 creates 条目尚未入库（无 planId），若要修改它们，请在 creates 中输出修改后的完整草稿替换原条目，defaultTag 保持一致除非用户明确要改标签。
+16. 时间校验（规则 12/13）应同样检查「当前待确认变更」中的 creates 条目，与已有计划或同批条目冲突时必须报 TIME_OVERLAP 错误。
+17. sourceText 返回「最初口述 + 最新补充」的合并摘要。`
 
 export interface AiDraftRefineSnapshot {
   ownerKey: 'me' | 'partner'

@@ -1,200 +1,192 @@
 <font-page-meta id="font-page-meta" />
-<view class="focus-page-bg"></view>
+  <view class="focus-page-bg"></view>
 
-<page-container
-  show="{{backGuardShow}}"
-  overlay="{{false}}"
-  position="center"
-  duration="{{0}}"
-  custom-style="width:100%;height:100vh;background:#faf9f6;"
-  bind:beforeleave="onBackGuardLeave"
-  bind:afterleave="onBackGuardAfterLeave"
->
-  <view class="focus-shell">
-    <view class="focus-page" style="padding-top: {{safeTopPx}}px; {{pageFontStyle}}">
-      <view class="focus-bg" aria-hidden="true">
-        <view class="focus-leaf focus-leaf-tr"></view>
-        <view class="focus-leaf focus-leaf-bl"></view>
-      </view>
+  <view style="width:100%;height:100vh;background:#faf9f6;">
+    <view class="focus-shell">
+      <view class="focus-page" style="padding-top: {{safeTopPx}}px; {{pageFontStyle}}">
+        <view class="focus-bg" aria-hidden="true">
+          <view class="focus-leaf focus-leaf-tr"></view>
+          <view class="focus-leaf focus-leaf-bl"></view>
+        </view>
 
-      <view class="focus-stage">
-        <view class="focus-stage-core">
-          <view class="timer-ring">
-            <view class="ring-track"></view>
-            <view class="ring-dot-orbit" style="transform: rotate({{ringAngle}}deg);">
-              <view class="ring-dot"></view>
-            </view>
-            <view class="ring-glow {{controlsPhase !== 'idle' ? (isPaused ? 'is-paused' : '') : 'is-idle'}}"></view>
-            <view class="ring-center">
-              <text class="tree-label">树</text>
-              <text class="time-display">{{timeText}}</text>
-              <text class="time-hint">{{hintText}}</text>
-            </view>
-          </view>
-
-          <view wx:if="{{controlsPhase === 'idle'}}" class="focus-idle-tags">
-            <view class="focus-idle-h-fade focus-idle-h-fade-left {{showIdleTagScrollFadeLeft ? 'is-visible' : ''}}"></view>
-            <scroll-view
-              class="focus-idle-tag-scroll"
-              scroll-x
-              enhanced
-              show-scrollbar="{{false}}"
-              enable-flex
-              bindscroll="onIdleTagScroll"
-            >
-              <view class="focus-idle-tag-list">
-                <view
-                  wx:for="{{tags}}"
-                  wx:key="*this"
-                  class="focus-idle-tag {{selectedTag === item ? 'is-active' : ''}}"
-                  data-tag="{{item}}"
-                  bindtap="selectTag"
-                >
-                  {{item}}
-                </view>
+        <view class="focus-stage">
+          <view class="focus-stage-core">
+            <view class="timer-ring">
+              <view class="ring-track"></view>
+              <view class="ring-dot-orbit" style="transform: rotate({{ringAngle}}deg);">
+                <view class="ring-dot"></view>
               </view>
-            </scroll-view>
-            <view class="focus-idle-h-fade focus-idle-h-fade-right {{showIdleTagScrollFadeRight ? 'is-visible' : ''}}"></view>
+              <view class="ring-glow {{controlsPhase !== 'idle' ? (isPaused ? 'is-paused' : '') : 'is-idle'}}"></view>
+              <view class="ring-center">
+                <text class="tree-label">树</text>
+                <text class="time-display">{{timeText}}</text>
+                <text class="time-hint">{{hintText}}</text>
+              </view>
+            </view>
+
+            <view wx:if="{{controlsPhase === 'idle'}}" class="focus-idle-tags">
+              <view class="focus-idle-h-fade focus-idle-h-fade-left {{showIdleTagScrollFadeLeft ? 'is-visible' : ''}}"></view>
+              <scroll-view
+                class="focus-idle-tag-scroll"
+                scroll-x
+                enhanced
+                show-scrollbar="{{false}}"
+                enable-flex
+                bindscroll="onIdleTagScroll"
+              >
+                <view class="focus-idle-tag-list">
+                  <view
+                    wx:for="{{tags}}"
+                    wx:key="*this"
+                    class="focus-idle-tag {{selectedTag === item ? 'is-active' : ''}}"
+                    data-tag="{{item}}"
+                    bindtap="selectTag"
+                  >
+                    {{item}}
+                  </view>
+                </view>
+              </scroll-view>
+              <view class="focus-idle-h-fade focus-idle-h-fade-right {{showIdleTagScrollFadeRight ? 'is-visible' : ''}}"></view>
+            </view>
           </view>
         </view>
-      </view>
 
-      <view class="focus-controls-wrap">
-        <view class="focus-morph focus-morph-{{controlsPhase}}">
-          <view class="focus-morph-stage">
-            <view class="morph-node morph-node-left" bindtap="onMorphLeftTap">
-              <view class="morph-circle morph-circle-left">
-                <view class="morph-circle-layer morph-circle-layer-green">
+        <view class="focus-controls-wrap">
+          <view class="focus-morph focus-morph-{{controlsPhase}}">
+            <view class="focus-morph-stage">
+              <view class="morph-node morph-node-left" bindtap="onMorphLeftTap">
+                <view class="morph-circle morph-circle-left">
+                  <view class="morph-circle-layer morph-circle-layer-green">
+                    <view class="icon-play"></view>
+                  </view>
+                  <view class="morph-circle-layer morph-circle-layer-left-final">
+                    <view wx:if="{{isPaused}}" class="icon-play icon-play-dark"></view>
+                    <view wx:else class="icon-pause"></view>
+                  </view>
+                </view>
+                <view class="morph-label-stack">
+                  <text class="morph-label morph-label-echo">开始</text>
+                  <text class="morph-label morph-label-final">{{isPaused ? '继续' : '暂停'}}</text>
+                </view>
+              </view>
+
+              <view class="morph-node morph-node-center" bindtap="startTimer">
+                <view class="morph-circle morph-circle-center control-circle control-circle-primary">
                   <view class="icon-play"></view>
                 </view>
-                <view class="morph-circle-layer morph-circle-layer-left-final">
-                  <view wx:if="{{isPaused}}" class="icon-play icon-play-dark"></view>
-                  <view wx:else class="icon-pause"></view>
-                </view>
               </view>
-              <view class="morph-label-stack">
-                <text class="morph-label morph-label-echo">开始</text>
-                <text class="morph-label morph-label-final">{{isPaused ? '继续' : '暂停'}}</text>
+
+              <view class="morph-node morph-node-right" bindtap="onMorphRightTap">
+                <view class="morph-circle morph-circle-right">
+                  <view class="morph-circle-layer morph-circle-layer-green">
+                    <view class="icon-play"></view>
+                  </view>
+                  <view class="morph-circle-layer morph-circle-layer-right-final">
+                    <view class="icon-stop"></view>
+                  </view>
+                </view>
+                <view class="morph-label-stack">
+                  <text class="morph-label morph-label-echo">开始</text>
+                  <text class="morph-label morph-label-final">结束</text>
+                </view>
               </view>
             </view>
+          </view>
+          <view class="focus-exit-link {{controlsPhase !== 'idle' ? 'is-hidden' : ''}}" bindtap="exitFocus">退出</view>
+        </view>
 
-            <view class="morph-node morph-node-center" bindtap="startTimer">
-              <view class="morph-circle morph-circle-center control-circle control-circle-primary">
-                <view class="icon-play"></view>
-              </view>
-            </view>
-
-            <view class="morph-node morph-node-right" bindtap="onMorphRightTap">
-              <view class="morph-circle morph-circle-right">
-                <view class="morph-circle-layer morph-circle-layer-green">
-                  <view class="icon-play"></view>
-                </view>
-                <view class="morph-circle-layer morph-circle-layer-right-final">
-                  <view class="icon-stop"></view>
-                </view>
-              </view>
-              <view class="morph-label-stack">
-                <text class="morph-label morph-label-echo">开始</text>
-                <text class="morph-label morph-label-final">结束</text>
-              </view>
+        <view wx:if="{{isShortFocusConfirmVisible}}" class="finish-mask mask-fade {{isShortFocusConfirmClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
+          <view class="finish-panel panel-slide {{isShortFocusConfirmClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
+            <view class="finish-title">专注未满 5 秒</view>
+            <view class="finish-muted">未满 5 秒的计时不会记录，确定要结束吗？</view>
+            <view class="finish-actions">
+              <button class="finish-button secondary-button" bindtap="confirmShortFocusEnd">确定结束</button>
+              <button class="finish-button primary-button" bindtap="cancelShortFocusConfirm">继续计时</button>
             </view>
           </view>
         </view>
-        <view class="focus-exit-link {{controlsPhase !== 'idle' ? 'is-hidden' : ''}}" bindtap="exitFocus">退出</view>
-      </view>
 
-      <view wx:if="{{isShortFocusConfirmVisible}}" class="finish-mask mask-fade {{isShortFocusConfirmClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
-        <view class="finish-panel panel-slide {{isShortFocusConfirmClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
-          <view class="finish-title">专注未满 5 秒</view>
-          <view class="finish-muted">未满 5 秒的计时不会记录，确定要结束吗？</view>
-          <view class="finish-actions">
-            <button class="finish-button secondary-button" bindtap="confirmShortFocusEnd">确定结束</button>
-            <button class="finish-button primary-button" bindtap="cancelShortFocusConfirm">继续计时</button>
-          </view>
-        </view>
-      </view>
-
-      <view wx:if="{{isFinishPanelVisible}}" class="finish-mask mask-fade {{isFinishPanelClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
-        <view class="finish-panel panel-slide {{isFinishPanelClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}">
-          <view class="finish-header">
-            <view class="finish-title">这次完成了什么？</view>
-            <view wx:if="{{timePreviewText}}" class="finish-time-badge">{{timePreviewText}}</view>
-          </view>
-          <view class="finish-muted">选择标签，详情可以打字或后续接语音输入</view>
-
-          <view class="finish-tags-wrap">
-            <view class="finish-h-fade finish-h-fade-left {{showTagScrollFadeLeft ? 'is-visible' : ''}}"></view>
-            <scroll-view
-              class="finish-tag-scroll"
-              scroll-x
-              enhanced
-              show-scrollbar="{{false}}"
-              enable-flex
-              bindscroll="onTagScroll"
-            >
-              <view class="finish-tag-list">
-                <view
-                  wx:for="{{tags}}"
-                  wx:key="*this"
-                  class="finish-tag-option"
-                  data-tag="{{item}}"
-                  bindtap="selectTag"
-                >
-                  <plan-tag-pill name="{{item}}" size="sm" active="{{selectedTag === item}}" />
-                </view>
-              </view>
-            </scroll-view>
-            <view class="finish-tags-trail">
-              <view class="finish-h-fade finish-h-fade-right {{showTagScrollFadeRight ? 'is-visible' : ''}}"></view>
-              <view class="finish-tag-add" bindtap="openTagCreateSheet">+</view>
+        <view wx:if="{{isFinishPanelVisible}}" class="finish-mask mask-fade {{isFinishPanelClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop">
+          <view class="finish-panel panel-slide {{isFinishPanelClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}">
+            <view class="finish-header">
+              <view class="finish-title">这次完成了什么？</view>
+              <view wx:if="{{timePreviewText}}" class="finish-time-badge">{{timePreviewText}}</view>
             </view>
-          </view>
+            <view class="finish-muted">选择标签，详情可以打字或后续接语音输入</view>
 
-          <view class="finish-section-label">关联计划（可选）</view>
-          <view wx:if="{{bindablePlans.length > 0 || linkedPlanId}}" class="finish-plan-wrap">
-            <view class="finish-h-fade finish-h-fade-left {{showPlanScrollFadeLeft ? 'is-visible' : ''}}"></view>
-            <scroll-view
-              class="finish-plan-scroll"
-              scroll-x
-              enhanced
-              show-scrollbar="{{false}}"
-              enable-flex
-              bindscroll="onPlanScroll"
-            >
-              <view class="finish-plan-list">
-                <view
-                  class="finish-plan-chip finish-plan-chip-none {{linkedPlanId === '' ? 'active' : ''}}"
-                  bindtap="clearLinkedPlan"
-                >
-                  不关联
+            <view class="finish-tags-wrap">
+              <view class="finish-h-fade finish-h-fade-left {{showTagScrollFadeLeft ? 'is-visible' : ''}}"></view>
+              <scroll-view
+                class="finish-tag-scroll"
+                scroll-x
+                enhanced
+                show-scrollbar="{{false}}"
+                enable-flex
+                bindscroll="onTagScroll"
+              >
+                <view class="finish-tag-list">
+                  <view
+                    wx:for="{{tags}}"
+                    wx:key="*this"
+                    class="finish-tag-option"
+                    data-tag="{{item}}"
+                    bindtap="selectTag"
+                  >
+                    <plan-tag-pill name="{{item}}" size="sm" active="{{selectedTag === item}}" />
+                  </view>
                 </view>
-                <view
-                  wx:for="{{bindablePlans}}"
-                  wx:key="id"
-                  class="finish-plan-chip {{linkedPlanId === item.id ? 'active' : ''}}"
-                  data-id="{{item.id}}"
-                  bindtap="selectLinkedPlan"
-                >
-                  <plan-tag-pill name="{{item.tag}}" size="sm" active="{{linkedPlanId === item.id}}" />
-                  <text class="finish-plan-meta">{{item.timeLabel}}</text>
-                  <text wx:if="{{item.subtitle}}" class="finish-plan-subtitle">{{item.subtitle}}</text>
-                </view>
+              </scroll-view>
+              <view class="finish-tags-trail">
+                <view class="finish-h-fade finish-h-fade-right {{showTagScrollFadeRight ? 'is-visible' : ''}}"></view>
+                <view class="finish-tag-add" bindtap="openTagCreateSheet">+</view>
               </view>
-            </scroll-view>
-            <view class="finish-h-fade finish-h-fade-right {{showPlanScrollFadeRight ? 'is-visible' : ''}}"></view>
-          </view>
-          <view wx:else class="finish-plan-empty muted">今天没有可关联的计划</view>
+            </view>
 
-          <textarea class="detail-input" value="{{detail}}" placeholder="具体做了什么？例如：背完 Unit 3 单词" bindinput="onDetailInput"></textarea>
+            <view class="finish-section-label">关联计划（可选）</view>
+            <view wx:if="{{bindablePlans.length > 0 || linkedPlanId}}" class="finish-plan-wrap">
+              <view class="finish-h-fade finish-h-fade-left {{showPlanScrollFadeLeft ? 'is-visible' : ''}}"></view>
+              <scroll-view
+                class="finish-plan-scroll"
+                scroll-x
+                enhanced
+                show-scrollbar="{{false}}"
+                enable-flex
+                bindscroll="onPlanScroll"
+              >
+                <view class="finish-plan-list">
+                  <view
+                    class="finish-plan-chip finish-plan-chip-none {{linkedPlanId === '' ? 'active' : ''}}"
+                    bindtap="clearLinkedPlan"
+                  >
+                    不关联
+                  </view>
+                  <view
+                    wx:for="{{bindablePlans}}"
+                    wx:key="id"
+                    class="finish-plan-chip {{linkedPlanId === item.id ? 'active' : ''}}"
+                    data-id="{{item.id}}"
+                    bindtap="selectLinkedPlan"
+                  >
+                    <plan-tag-pill name="{{item.tag}}" size="sm" active="{{linkedPlanId === item.id}}" />
+                    <text class="finish-plan-meta">{{item.timeLabel}}</text>
+                    <text wx:if="{{item.subtitle}}" class="finish-plan-subtitle">{{item.subtitle}}</text>
+                  </view>
+                </view>
+              </scroll-view>
+              <view class="finish-h-fade finish-h-fade-right {{showPlanScrollFadeRight ? 'is-visible' : ''}}"></view>
+            </view>
+            <view wx:else class="finish-plan-empty muted">今天没有可关联的计划</view>
 
-          <view class="finish-actions">
-            <button class="finish-button secondary-button" bindtap="closeFinishPanel">放弃记录</button>
-            <button class="finish-button primary-button" bindtap="saveCompletion">保存记录</button>
+            <textarea class="detail-input" value="{{detail}}" placeholder="具体做了什么？例如：背完 Unit 3 单词" bindinput="onDetailInput"></textarea>
+
+            <view class="finish-actions">
+              <button class="finish-button secondary-button" bindtap="closeFinishPanel">放弃记录</button>
+              <button class="finish-button primary-button" bindtap="saveCompletion">保存记录</button>
+            </view>
           </view>
         </view>
       </view>
     </view>
   </view>
-</page-container>
 
 <tag-create-sheet visible="{{isTagCreateVisible}}" pageFontStyle="{{pageFontStyle}}" bind:close="closeTagCreateSheet" bind:confirm="onTagCreateConfirm" />

@@ -1,5 +1,4 @@
 {
-  "disableSwipeBack": true,
   "usingComponents": {
     "font-page-meta": "/components/font-page-meta/font-page-meta",
     "tag-create-sheet": "/components/tag-create-sheet/tag-create-sheet",
