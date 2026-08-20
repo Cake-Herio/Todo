@@ -1,6 +1,5 @@
-import { getFallbackAvatarUrl, pickPartnerAvatarStorageUrl, resolveAvatarDisplayUrl, toDisplayAvatarUrl } from './avatar-display'
+import { getDefaultAvatarUrl, preloadAvatar } from './avatar-display'
 import { SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
-import { getOwnerAvatarUrl } from './data'
 import { getDisplayAvatarUrl, getPartnerDisplayAvatarUrl, getPartnerDisplayNickname, getSession, isSharedSpaceMode, saveSession } from './session'
 
 export interface OwnerFilterOption {
@@ -16,13 +15,6 @@ export interface OwnerFilterState {
   singleUserMode: boolean
 }
 
-interface CloudUserDoc {
-  _openid?: string
-  openid?: string
-  nickname?: string
-  avatarUrl?: string
-}
-
 interface SpaceMember {
   openid: string
   nickname: string
@@ -36,11 +28,11 @@ interface ListMembersResult {
   hasPartner?: boolean
 }
 
-const getMeAvatarUrl = () => toDisplayAvatarUrl(getDisplayAvatarUrl() || '', getFallbackAvatarUrl('me'))
+const getMeAvatarUrl = () => getDisplayAvatarUrl() || getDefaultAvatarUrl()
 
 export const buildOwnerFilters = (hasPartner: boolean): OwnerFilterOption[] => {
   const meAvatar = getMeAvatarUrl()
-  const partnerAvatar = getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner')
+  const partnerAvatar = getPartnerDisplayAvatarUrl() || getDefaultAvatarUrl()
   const partnerLabel = getPartnerDisplayNickname()
   const meFilter: OwnerFilterOption = {
     key: 'me',
@@ -90,110 +82,78 @@ export const normalizeOwnerFilter = (activeFilter: string, hasPartner: boolean) 
   return 'all'
 }
 
-const mapCloudUserDoc = (doc: CloudUserDoc): SpaceMember | null => {
-  const openid = doc.openid || doc._openid
-  if (!openid) {
-    return null
-  }
-
-  return {
-    openid,
-    nickname: doc.nickname || '我',
-    avatarUrl: doc.avatarUrl || '',
-  }
-}
-
 const fetchSpaceMembersViaCloudFunction = async (): Promise<SpaceMember[] | null> => {
-  const callers = [
-    () =>
-      wx.cloud.callFunction({
-        name: SHARED_SPACE_CLOUD_FUNCTION,
-        data: { action: 'listMembers' },
-      }),
-    () =>
-      wx.cloud.callFunction({
-        name: 'focusPresence',
-        data: { action: 'listMembers' },
-      }),
-  ]
+  try {
+    const result = await wx.cloud.callFunction({
+      name: SHARED_SPACE_CLOUD_FUNCTION,
+      data: { action: 'listMembers' },
+    })
+    const payload = result.result as ListMembersResult
 
-  for (const call of callers) {
-    try {
-      const result = await call()
-      const payload = result.result as ListMembersResult
-
-      if (payload?.ok && payload.members) {
-        return payload.members.filter((member) => Boolean(member.openid))
-      }
-    } catch (error) {
-      console.warn('[owner-filters] listMembers cloud function failed', error)
+    if (payload?.ok && payload.members) {
+      return payload.members.filter((member) => Boolean(member.openid))
     }
+  } catch (error) {
+    console.warn('[owner-filters] listMembers cloud function failed', error)
   }
 
   return null
 }
 
-const fetchSpaceMembersViaClientDb = async (sharedSpaceId: string): Promise<SpaceMember[]> => {
-  const db = wx.cloud.database()
-  const res = await db.collection('users').where({ sharedSpaceId }).get()
-  const members = (res.data || []) as CloudUserDoc[]
-
-  return members
-    .map(mapCloudUserDoc)
-    .filter((member): member is SpaceMember => Boolean(member))
-}
-
 export const refreshSpaceMembersFromCloud = async () => {
   const session = getSession()
 
-  if (!session || session.soloMode || !session.sharedSpaceId) {
+  if (!session || !session.sharedSpaceId) {
     return { memberCount: 1, hasPartner: false }
   }
 
   try {
-    const cloudMembers = await fetchSpaceMembersViaCloudFunction()
-    const members = cloudMembers || (await fetchSpaceMembersViaClientDb(session.sharedSpaceId))
-    const membersTrusted = Boolean(cloudMembers)
+    const members = (await fetchSpaceMembersViaCloudFunction()) || []
     const partner = members.find((item) => item.openid !== session.openid) || null
     const hasPartner = members.length > 1 && Boolean(partner)
 
     if (hasPartner && partner?.openid) {
-      const partnerAvatarUrl = pickPartnerAvatarStorageUrl(partner.avatarUrl || '', session.partnerAvatarUrl)
+      const partnerAvatarSourceUrl = partner.avatarUrl || session.partnerAvatarSourceUrl || ''
+      const partnerAvatarUrl = partnerAvatarSourceUrl
+      const partnerChanged =
+        session.partnerOpenid !== partner.openid ||
+        session.partnerNickname !== (partner.nickname || '对方') ||
+        session.partnerAvatarSourceUrl !== partnerAvatarSourceUrl ||
+        session.partnerAvatarUrl !== partnerAvatarUrl
 
-      saveSession({
-        ...session,
-        partnerOpenid: partner.openid,
-        partnerNickname: partner.nickname || '对方',
-        partnerAvatarUrl,
-      })
-
-      if (partnerAvatarUrl.startsWith('cloud://')) {
-        void resolveAvatarDisplayUrl(partnerAvatarUrl)
+      if (partnerChanged) {
+        saveSession({
+          ...session,
+          partnerOpenid: partner.openid,
+          partnerNickname: partner.nickname || '对方',
+          partnerAvatarUrl,
+          partnerAvatarSourceUrl,
+        })
       }
+
+      // 每次打开房间都校验本地文件是否仍在；有效缓存不会触发云端下载。
+      const displayAvatarUrl = await preloadAvatar(partnerAvatarSourceUrl)
+      console.info('[avatar] partner member resolved', {
+        openid: partner.openid,
+        nickname: partner.nickname || '对方',
+        sourceAvatarUrl: partnerAvatarSourceUrl,
+        displayAvatarUrl,
+      })
     }
 
-    // 同时解析自己的头像，确保日历等页面的 <image> 能命中缓存
-    const myAvatar = session.avatarUrl
-    if (myAvatar?.startsWith('cloud://')) {
-      void resolveAvatarDisplayUrl(myAvatar)
-    }
+    await preloadAvatar(session.avatarUrl)
 
-    if (!hasPartner && !membersTrusted) {
-      // 无 partner 且数据不可信，不做清除
-    } else if (
-      membersTrusted &&
-      !hasPartner &&
-      (session.partnerOpenid || session.partnerNickname || session.partnerAvatarUrl)
-    ) {
+    if (!hasPartner && (session.partnerOpenid || session.partnerNickname || session.partnerAvatarUrl)) {
       saveSession({
         ...session,
         partnerOpenid: undefined,
         partnerNickname: undefined,
         partnerAvatarUrl: undefined,
+        partnerAvatarSourceUrl: undefined,
       })
     }
 
-    return { memberCount: members.length, hasPartner: membersTrusted ? hasPartner : Boolean(session.partnerOpenid) || hasPartner }
+    return { memberCount: members.length, hasPartner }
   } catch (error) {
     console.warn('[owner-filters] refresh members failed', error)
     const hasPartner = Boolean(session.partnerOpenid)

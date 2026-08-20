@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
 <view class="day-page-shell" style="{{pageFontStyle}}">
 <template name="planCard">
   <view class="schedule-card {{isTimed ? 'is-timed' : ''}}">
@@ -168,11 +168,21 @@
     <view class="plan-action-close" catchtap="closePlanAction">×</view>
 
     <block wx:if="{{!isPlanEditVisible}}">
-      <view class="plan-action-title">{{activePlan.tag}}</view>
-      <view class="plan-action-subtitle muted">选择要进行的操作</view>
+      <view class="plan-action-title">{{activePlan.title || activePlan.tag}}</view>
+      <view class="plan-action-subtitle muted">计划详情</view>
 
-      <view class="plan-action-preview board-card {{activePlan.color}} {{activePlan.isExpired ? 'expired' : ''}}">
-        <template is="planCard" data="{{plan: activePlan, showTime: true, showStatus: true, isTimed: false}}" />
+      <view class="plan-detail-card">
+        <view class="plan-detail-time-row">
+          <image class="plan-detail-time-icon" src="/images/icons/timer.svg" mode="aspectFit"></image>
+          <text class="plan-detail-time">{{activePlan.time || '全天'}}</text>
+          <text wx:if="{{activePlan.status && activePlan.status !== '待开始'}}" class="plan-detail-status {{activePlan.status === '逾期' ? 'overdue' : ''}}">{{activePlan.status}}</text>
+        </view>
+        <view class="plan-detail-meta">
+          <image class="plan-detail-avatar {{activePlan.color}}" src="{{activePlan.ownerAvatarUrl}}" mode="aspectFill"></image>
+          <plan-tag-pill name="{{activePlan.tag}}" size="sm" />
+          <text class="plan-detail-owner">{{activePlan.owner}}</text>
+        </view>
+        <view wx:if="{{activePlan.remark}}" class="plan-detail-note">{{activePlan.remark}}</view>
       </view>
 
       <view class="plan-action-actions">

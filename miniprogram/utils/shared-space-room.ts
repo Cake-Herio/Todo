@@ -1,5 +1,6 @@
 import { SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 import { bootstrapSharedSpace, resetCloudBootstrap } from './cloud-sync'
+import { preloadAvatar } from './avatar-display'
 import { getSession, saveSession, type UserSession } from './session'
 
 export interface RoomSummary {
@@ -55,13 +56,17 @@ const callSharedSpace = async (data: Record<string, unknown>) => {
 const getProfilePayload = () => {
   const session = getSession()
 
+  if (!session?.avatarUrl?.startsWith('cloud://')) {
+    throw new Error('请先完善头像资料')
+  }
+
   return {
     nickname: session?.nickname?.trim() || '我',
     avatarUrl: session?.avatarUrl || '',
   }
 }
 
-const applyRoomSession = (payload: RoomActionResult) => {
+const applyRoomSession = async (payload: RoomActionResult) => {
   const previous = getSession()
 
   if (!payload.ok || !payload.sharedSpaceId) {
@@ -77,21 +82,23 @@ const applyRoomSession = (payload: RoomActionResult) => {
     openid,
     sharedSpaceId: payload.sharedSpaceId,
     inviteVerified: true,
-    soloMode: false,
     nickname: payload.nickname?.trim() || previous?.nickname?.trim() || '我',
-    avatarUrl: payload.avatarUrl || previous?.avatarUrl || '',
-    profileCompleted: previous?.profileCompleted ?? true,
+    avatarUrl: payload.avatarUrl || '',
+    profileCompleted: Boolean(payload.avatarUrl),
     partnerOpenid: payload.partner?.openid,
     partnerNickname: payload.partner?.nickname,
     partnerAvatarUrl: payload.partner?.avatarUrl,
+    partnerAvatarSourceUrl: payload.partner?.avatarUrl,
   }
 
+  await preloadAvatar(session.avatarUrl)
+  await preloadAvatar(session.partnerAvatarSourceUrl || '')
   saveSession(session)
   return session
 }
 
 const activateRoomSession = async (payload: RoomActionResult) => {
-  applyRoomSession(payload)
+  await applyRoomSession(payload)
   resetCloudBootstrap()
   await bootstrapSharedSpace()
   getApp<IAppOption>().globalData.cloudReady = true
@@ -110,7 +117,6 @@ const applyRoomExitResult = async (response: RoomActionResult) => {
       openid: openid || '',
       sharedSpaceId: '',
       inviteVerified: false,
-      soloMode: false,
       nickname: response.nickname || previous?.nickname?.trim() || '我',
       avatarUrl: response.avatarUrl || previous?.avatarUrl || '',
       profileCompleted: previous?.profileCompleted ?? true,
@@ -120,7 +126,7 @@ const applyRoomExitResult = async (response: RoomActionResult) => {
     return
   }
 
-  applyRoomSession(response)
+  await applyRoomSession(response)
   resetCloudBootstrap()
   await bootstrapSharedSpace()
   getApp<IAppOption>().globalData.cloudReady = true

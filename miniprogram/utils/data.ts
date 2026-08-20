@@ -1,7 +1,7 @@
 import { notifyCloudMutate } from './cloud-bridge'
 import { resolveTagBindingFromList } from './tag-binding'
 import { getSession } from './session'
-import { getStableAvatarDisplayUrl } from './avatar-display'
+import { getAvatarDisplayUrl, getDefaultAvatarUrl } from './avatar-display'
 import { ScheduleTimeHelper } from './schedule-time'
 
 export type OwnerKey = 'me' | 'partner'
@@ -50,9 +50,10 @@ interface AppData {
 }
 
 const STORAGE_KEY = 'myforest_local_data_v5'
+const DELETED_COMPLETED_RECORDS_KEY = 'myforest_deleted_completed_records_v1'
 const AVATARS = {
-  me: '/assets/avatars/me.png',
-  partner: '/assets/avatars/partner.png',
+  me: getDefaultAvatarUrl(),
+  partner: getDefaultAvatarUrl(),
 }
 export { DEFAULT_PLAN_TAGS } from './plan-tags'
 
@@ -79,15 +80,14 @@ export const getOwnerAvatarUrl = (ownerKey: OwnerKey) => {
 
   if (ownerKey === 'me') {
     if (session?.profileCompleted && session.avatarUrl) {
-      // 优先取已缓存的 HTTPS 链接；未缓存则用原始 cloud:// （<image> 可原生渲染）
-      return getStableAvatarDisplayUrl(session.avatarUrl) || session.avatarUrl
+      return getAvatarDisplayUrl(session.avatarUrl)
     }
   }
 
   if (ownerKey === 'partner') {
-    const raw = session?.partnerAvatarUrl || ''
+    const raw = session?.partnerAvatarSourceUrl || session?.partnerAvatarUrl || ''
     if (raw) {
-      return getStableAvatarDisplayUrl(raw) || raw
+      return getAvatarDisplayUrl(raw)
     }
   }
 
@@ -214,6 +214,32 @@ export const applyTagUpdate = (tagId: string, update: { name?: string }) => {
 export const getPlans = () => getLocalData().plans
 
 export const getCompletedRecords = () => getLocalData().completedRecords
+
+export const getDeletedCompletedRecordIds = (): string[] => {
+  const stored = wx.getStorageSync(DELETED_COMPLETED_RECORDS_KEY) as string[] | ''
+  return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string' && Boolean(id)) : []
+}
+
+export const markCompletedRecordDeleted = (id: string) => {
+  if (!id) {
+    return
+  }
+
+  const ids = new Set(getDeletedCompletedRecordIds())
+  ids.add(id)
+  wx.setStorageSync(DELETED_COMPLETED_RECORDS_KEY, Array.from(ids))
+}
+
+export const clearCompletedRecordDeletion = (id: string) => {
+  if (!id) {
+    return
+  }
+
+  wx.setStorageSync(
+    DELETED_COMPLETED_RECORDS_KEY,
+    getDeletedCompletedRecordIds().filter((item) => item !== id),
+  )
+}
 
 export const getPlansByDate = (date: string) => getPlans().filter((plan) => plan.date === date && plan.status !== 'cancelled')
 
@@ -719,6 +745,7 @@ export const deleteCompletedRecord = (id: string): boolean => {
     completedRecords: data.completedRecords.filter((r) => r.id !== id),
   })
 
+  markCompletedRecordDeleted(id)
   notifyCloudDataChanged()
   return true
 }

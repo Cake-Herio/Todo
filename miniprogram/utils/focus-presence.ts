@@ -1,10 +1,10 @@
-import { ensureAvatarDisplayUrl, getFallbackAvatarUrl, pickPartnerAvatarRaw } from './avatar-display'
+import { preloadAvatar } from './avatar-display'
 import { SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 import { getSession, isSharedSpaceMode } from './session'
 
 const COLLECTION = 'focus_sessions'
 
-/** 上传专注状态：仅在开始 / 暂停 / 恢复时写入；tag/detail 在完成时再选，此处不传 */
+/** 上传专注状态：开始计时时同步已选标签，供同房间主页展示。 */
 export interface FocusPresencePayload {
   /** 整场专注的开始时间（用于保存记录） */
   sessionStartedAt: number
@@ -13,6 +13,7 @@ export interface FocusPresencePayload {
   /** 当前计时段的开始时间；暂停时为 0 */
   segmentStartedAt: number
   isPaused: boolean
+  tag?: string
 }
 
 export interface OwnFocusRestore {
@@ -75,6 +76,14 @@ const formatDurationLabel = (elapsedSeconds: number) => {
   return `${minutes} 分钟`
 }
 
+const resolveFocusStatusLabel = (doc: FocusSessionDoc) => {
+  if (doc.isPaused) {
+    return '暂停'
+  }
+
+  return doc.tag?.trim() || '专注'
+}
+
 const resolveElapsedSeconds = (doc: FocusSessionDoc) => {
   if (typeof doc.accumulatedSeconds === 'number') {
     if (doc.isPaused || !doc.segmentStartedAt) {
@@ -124,11 +133,11 @@ const toSelfFocusView = async (
 ): Promise<SelfFocusView> => {
   const elapsedSeconds = resolveElapsedSeconds(doc)
   const rawAvatar = session.avatarUrl || ''
-  const avatarUrl = await ensureAvatarDisplayUrl(rawAvatar, getFallbackAvatarUrl('me'))
+  const avatarUrl = await preloadAvatar(rawAvatar)
 
   return {
     name: session.nickname || '我',
-    status: doc.isPaused ? '暂停' : '专注',
+    status: resolveFocusStatusLabel(doc),
     duration: formatDurationLabel(elapsedSeconds),
     avatarUrl,
     restore: toOwnFocusRestore(doc),
@@ -137,19 +146,14 @@ const toSelfFocusView = async (
 
 const toPartnerFocusView = async (
   doc: FocusSessionDoc,
-  session: NonNullable<ReturnType<typeof getSession>>,
 ): Promise<PartnerFocusView> => {
   const elapsedSeconds = resolveElapsedSeconds(doc)
-  const isConfiguredPartner = doc.userId === session.partnerOpenid
-  const rawAvatar =
-    pickPartnerAvatarRaw(session, doc.avatarUrl) ||
-    (isConfiguredPartner ? session.partnerAvatarUrl : '') ||
-    ''
-  const avatarUrl = await ensureAvatarDisplayUrl(rawAvatar, getFallbackAvatarUrl('partner'))
+  const rawAvatar = doc.avatarUrl || ''
+  const avatarUrl = await preloadAvatar(rawAvatar)
 
   return {
-    name: doc.nickname || (isConfiguredPartner ? session.partnerNickname : '') || '对方',
-    status: doc.isPaused ? '暂停' : '专注',
+    name: doc.nickname || '对方',
+    status: resolveFocusStatusLabel(doc),
     duration: formatDurationLabel(elapsedSeconds),
     avatarUrl,
   }
@@ -248,7 +252,7 @@ const pickPartnerSession = (sessions: FocusSessionDoc[], session: NonNullable<Re
 
 export const publishFocusPresence = async (payload: FocusPresencePayload) => {
   const session = getSession()
-  if (!session?.openid || !session.sharedSpaceId || session.soloMode) {
+  if (!session?.openid || !session.sharedSpaceId) {
     return
   }
 
@@ -267,7 +271,7 @@ export const publishFocusPresence = async (payload: FocusPresencePayload) => {
   const data = {
     userId: session.openid,
     sharedSpaceId: session.sharedSpaceId,
-    tag: '',
+    tag: payload.tag?.trim() || '',
     detail: '',
     linkedPlanId: '',
     sessionStartedAt: payload.sessionStartedAt,
@@ -287,7 +291,7 @@ export const publishFocusPresence = async (payload: FocusPresencePayload) => {
 
 export const clearFocusPresence = async () => {
   const session = getSession()
-  if (!session?.openid || !session.sharedSpaceId || session.soloMode) {
+  if (!session?.openid || !session.sharedSpaceId) {
     return
   }
 
@@ -340,5 +344,5 @@ export const fetchPartnerFocusPresence = async (): Promise<PartnerFocusView | nu
     return null
   }
 
-  return toPartnerFocusView(doc, session)
+  return toPartnerFocusView(doc)
 }

@@ -1,6 +1,7 @@
 {
   "usingComponents": {
     "font-page-meta": "/components/font-page-meta/font-page-meta",
-    "plan-tag-pill": "/components/plan-tag-pill/plan-tag-pill"
+    "plan-tag-pill": "/components/plan-tag-pill/plan-tag-pill",
+    "ec-canvas": "/components/ec-canvas/ec-canvas"
   }
 }

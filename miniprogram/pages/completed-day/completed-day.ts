@@ -9,6 +9,7 @@ import {
 } from '../../utils/data'
 import { refreshWithLocalFirst } from '../../utils/cloud-sync'
 import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
+import { getDisplayAvatarUrl, getPartnerDisplayAvatarUrl } from '../../utils/session'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import {
   applyTimelineBoardUpdate,
@@ -51,25 +52,21 @@ const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四
 
 const DAY_START_MINUTES = 0
 const DAY_END_MINUTES = 24 * 60
-const HOUR_HEIGHT = 88
+const HOUR_HEIGHT = 44
 const MIN_CARD_HEIGHT = 92
 const COMPACT_CARD_HEIGHT = 84
 const MIN_CARD_WITH_DETAIL_HEIGHT = 112
 const COMPACT_CARD_WITH_DETAIL_HEIGHT = 106
 const BOARD_BOTTOM_PADDING = 24
-const MAX_HOUR_HEIGHT_SCALE = 4
 const TIMED_LANE_GAP = 2
 const TIMED_SINGLE_WIDTH_PERCENT = 75
 const CARD_STACK_GAP = 8
-const STRETCH_CLUSTER_GAP_MIN = 90
-const STRETCH_WINDOW_PAD_MIN = 20
-const STRETCH_BLOCK_MIN = 120
+const TIMELINE_BREAKPOINT_MINUTES = 120
 
 interface TimelineSegment {
   startMin: number
   endMin: number
-  hourHeight: number
-  stretch: boolean
+  height: number
 }
 const OWNER_COLUMN_MAP: Record<OwnerKey, number> = {
   me: 0,
@@ -111,9 +108,6 @@ const getNowMinutes = () => {
 
 const isViewingToday = (selectedDate: string) => selectedDate === getToday()
 
-const buildMinutesToY = (rangeStart: number, hourHeight = HOUR_HEIGHT): MinutesToY =>
-  (minutes) => ((minutes - rangeStart) / 60) * hourHeight
-
 const buildSegmentOffsets = (segments: TimelineSegment[]) => {
   let offsetY = 0
 
@@ -122,7 +116,7 @@ const buildSegmentOffsets = (segments: TimelineSegment[]) => {
       ...segment,
       offsetY,
     }
-    offsetY += ((segment.endMin - segment.startMin) / 60) * segment.hourHeight
+    offsetY += segment.height
     return item
   })
 }
@@ -143,184 +137,14 @@ const buildPiecewiseMinutesToY = (segments: TimelineSegment[]): MinutesToY => {
       withOffsets.find((item) => minutes >= item.startMin && minutes < item.endMin) ||
       withOffsets[withOffsets.length - 1]
 
-    return segment.offsetY + ((minutes - segment.startMin) / 60) * segment.hourHeight
+    const duration = segment.endMin - segment.startMin
+    const ratio = duration > 0 ? (minutes - segment.startMin) / duration : 0
+    return segment.offsetY + ratio * segment.height
   }
 }
 
 const buildPiecewiseBoardHeight = (segments: TimelineSegment[]) =>
-  segments.reduce(
-    (sum, segment) => sum + ((segment.endMin - segment.startMin) / 60) * segment.hourHeight,
-    0,
-  )
-
-const buildBoardHeight = (rangeStart: number, rangeEnd: number, hourHeight = HOUR_HEIGHT) =>
-  ((rangeEnd - rangeStart) / 60) * hourHeight
-
-const alignStretchWindow = (startMin: number, endMin: number, rangeStart: number, rangeEnd: number) => ({
-  startMin: Math.max(rangeStart, Math.floor((startMin - STRETCH_WINDOW_PAD_MIN) / STRETCH_BLOCK_MIN) * STRETCH_BLOCK_MIN),
-  endMin: Math.min(rangeEnd, Math.ceil((endMin + STRETCH_WINDOW_PAD_MIN) / STRETCH_BLOCK_MIN) * STRETCH_BLOCK_MIN),
-})
-
-const mergeMinuteIntervals = (intervals: Array<{ startMin: number; endMin: number }>) => {
-  if (intervals.length === 0) {
-    return []
-  }
-
-  const sorted = [...intervals].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin)
-  const merged = [{ ...sorted[0] }]
-
-  sorted.slice(1).forEach((interval) => {
-    const last = merged[merged.length - 1]
-
-    if (interval.startMin <= last.endMin + STRETCH_CLUSTER_GAP_MIN) {
-      last.endMin = Math.max(last.endMin, interval.endMin)
-      return
-    }
-
-    merged.push({ ...interval })
-  })
-
-  return merged
-}
-
-const mergeStretchWindows = (windows: Array<{ startMin: number; endMin: number; hourHeight: number }>) => {
-  if (windows.length === 0) {
-    return []
-  }
-
-  const sorted = [...windows].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin)
-  const merged = [{ ...sorted[0] }]
-
-  sorted.slice(1).forEach((window) => {
-    const last = merged[merged.length - 1]
-
-    if (window.startMin <= last.endMin) {
-      last.endMin = Math.max(last.endMin, window.endMin)
-      last.hourHeight = Math.max(last.hourHeight, window.hourHeight)
-      return
-    }
-
-    merged.push({ ...window })
-  })
-
-  return merged
-}
-
-const detectStretchWindows = (
-  records: CompletedRecord[],
-  selectedDate: string,
-  rangeStart: number,
-  rangeEnd: number,
-) => {
-  const intervals = records
-    .map((record) => {
-      const interval = getRecordInterval(record, selectedDate)
-      return clipIntervalToRange(interval.startMin, interval.endMin, rangeStart, rangeEnd)
-    })
-    .filter(Boolean) as Array<{ startMin: number; endMin: number }>
-
-  return mergeMinuteIntervals(intervals).map((cluster) => {
-    const aligned = alignStretchWindow(cluster.startMin, cluster.endMin, rangeStart, rangeEnd)
-
-    return {
-      startMin: aligned.startMin,
-      endMin: aligned.endMin,
-      hourHeight: HOUR_HEIGHT,
-    }
-  })
-}
-
-const buildTimelineSegments = (
-  stretchWindows: Array<{ startMin: number; endMin: number; hourHeight: number }>,
-  rangeStart: number,
-  rangeEnd: number,
-): TimelineSegment[] => {
-  const windows = mergeStretchWindows(stretchWindows)
-
-  if (windows.length === 0) {
-    return [
-      {
-        startMin: rangeStart,
-        endMin: rangeEnd,
-        hourHeight: HOUR_HEIGHT,
-        stretch: false,
-      },
-    ]
-  }
-
-  const segments: TimelineSegment[] = []
-  let cursor = rangeStart
-
-  windows.forEach((window) => {
-    if (cursor < window.startMin) {
-      segments.push({
-        startMin: cursor,
-        endMin: window.startMin,
-        hourHeight: HOUR_HEIGHT,
-        stretch: false,
-      })
-    }
-
-    segments.push({
-      startMin: window.startMin,
-      endMin: window.endMin,
-      hourHeight: window.hourHeight,
-      stretch: true,
-    })
-
-    cursor = window.endMin
-  })
-
-  if (cursor < rangeEnd) {
-    segments.push({
-      startMin: cursor,
-      endMin: rangeEnd,
-      hourHeight: HOUR_HEIGHT,
-      stretch: false,
-    })
-  }
-
-  return segments
-}
-
-const refineStretchSegments = (segments: TimelineSegment[], views: CompletedRecordView[]) => {
-  let changed = false
-
-  const nextSegments = segments.map((segment) => {
-    if (!segment.stretch) {
-      return segment
-    }
-
-    const viewsInSegment = views.filter(
-      (view) => view.startMin >= segment.startMin && view.startMin < segment.endMin,
-    )
-
-    if (viewsInSegment.length === 0) {
-      return segment
-    }
-
-    const nextHourHeight = Math.min(
-      HOUR_HEIGHT * MAX_HOUR_HEIGHT_SCALE,
-      Math.max(HOUR_HEIGHT, estimateMinHourHeight(viewsInSegment)),
-    )
-
-    if (Math.abs(nextHourHeight - segment.hourHeight) < 0.5) {
-      return segment
-    }
-
-    changed = true
-
-    return {
-      ...segment,
-      hourHeight: nextHourHeight,
-    }
-  })
-
-  return {
-    segments: nextSegments,
-    changed,
-  }
-}
+  segments.reduce((sum, segment) => sum + segment.height, 0)
 
 const buildTimelineMarkers = (
   rangeStart: number,
@@ -429,6 +253,106 @@ const clipIntervalToRange = (
   }
 }
 
+const getRemarkLineCount = (detail: string, columnCount: number) => {
+  const textWidth = Array.from(detail).reduce(
+    (width, character) => width + (/^[a-zA-Z0-9 .,!?;:'\-]$/.test(character) ? 12 : 22),
+    0,
+  )
+  const lineWidth = columnCount > 1 ? 340 : 520
+
+  return Math.max(1, Math.ceil(textWidth / lineWidth))
+}
+
+const getRecordMinHeight = (
+  record: CompletedRecord,
+  startMin: number,
+  endMin: number,
+  columnCount = 1,
+) => {
+  const isCompact = endMin - startMin <= 20
+  const detail = `${record.detail || ''}`.trim()
+  const hasDetail = detail.length > 0
+
+  if (hasDetail) {
+    const baseHeight = isCompact ? COMPACT_CARD_WITH_DETAIL_HEIGHT : MIN_CARD_WITH_DETAIL_HEIGHT
+    const extraLines = getRemarkLineCount(detail, columnCount) - 1
+    return baseHeight + extraLines * 31
+  }
+
+  return isCompact ? COMPACT_CARD_HEIGHT : MIN_CARD_HEIGHT
+}
+
+const buildTimelineBreakpoints = (
+  records: CompletedRecord[],
+  selectedDate: string,
+  rangeStart: number,
+  rangeEnd: number,
+) => {
+  const points = new Set<number>([rangeStart, rangeEnd])
+
+  for (let minutes = rangeStart; minutes <= rangeEnd; minutes += TIMELINE_BREAKPOINT_MINUTES) {
+    points.add(minutes)
+  }
+
+  records.forEach((record) => {
+    const interval = getRecordInterval(record, selectedDate)
+    const clipped = clipIntervalToRange(interval.startMin, interval.endMin, rangeStart, rangeEnd)
+
+    if (clipped) {
+      points.add(clipped.startMin)
+      points.add(clipped.endMin)
+    }
+  })
+
+  return [...points].sort((a, b) => a - b)
+}
+
+const buildTimelineSegments = (
+  records: CompletedRecord[],
+  selectedDate: string,
+  rangeStart: number,
+  rangeEnd: number,
+  columnCount: number,
+): TimelineSegment[] => {
+  const breakpoints = buildTimelineBreakpoints(records, selectedDate, rangeStart, rangeEnd)
+  const segments: TimelineSegment[] = []
+
+  for (let index = 0; index < breakpoints.length - 1; index += 1) {
+    const startMin = breakpoints[index]
+    const endMin = breakpoints[index + 1]
+    const duration = endMin - startMin
+    const baseHeight = (duration / 60) * HOUR_HEIGHT
+    const cardHeightDemand = records.reduce((maxHeight, record) => {
+      const interval = getRecordInterval(record, selectedDate)
+      const clipped = clipIntervalToRange(interval.startMin, interval.endMin, rangeStart, rangeEnd)
+
+      if (!clipped) {
+        return maxHeight
+      }
+
+      const overlapStart = Math.max(startMin, clipped.startMin)
+      const overlapEnd = Math.min(endMin, clipped.endMin)
+      const overlapDuration = overlapEnd - overlapStart
+      const recordDuration = clipped.endMin - clipped.startMin
+
+      if (overlapDuration <= 0 || recordDuration <= 0) {
+        return maxHeight
+      }
+
+      const minHeight = getRecordMinHeight(record, clipped.startMin, clipped.endMin, columnCount)
+      return Math.max(maxHeight, minHeight * (overlapDuration / recordDuration))
+    }, 0)
+
+    segments.push({
+      startMin,
+      endMin,
+      height: Math.max(baseHeight, cardHeightDemand),
+    })
+  }
+
+  return segments
+}
+
 const toRecordView = (
   record: CompletedRecord,
   startMin: number,
@@ -467,34 +391,6 @@ const getBoardColumnLayout = (
 
 const getColumnWidthPercent = (columnCount: number) =>
   columnCount === 1 ? 100 : (100 - TIMED_LANE_GAP * (columnCount - 1)) / columnCount
-
-const estimateMinHourHeight = (views: CompletedRecordView[]) => {
-  let required = HOUR_HEIGHT
-
-  ;(['me', 'partner'] as OwnerKey[]).forEach((ownerKey) => {
-    const sorted = views
-      .filter((view) => view.ownerKey === ownerKey)
-      .sort((a, b) => a.startMin - b.startMin || a.id.localeCompare(b.id))
-
-    sorted.forEach((card, index) => {
-      if (index === 0) {
-        return
-      }
-
-      const prev = sorted[index - 1]
-      const gapMinutes = card.startMin - prev.startMin
-
-      if (gapMinutes <= 0) {
-        return
-      }
-
-      const minHourHeight = (prev.height * 60) / gapMinutes
-      required = Math.max(required, minHourHeight)
-    })
-  })
-
-  return Math.min(required, HOUR_HEIGHT * MAX_HOUR_HEIGHT_SCALE)
-}
 
 const layoutOwnerColumnStack = (views: CompletedRecordView[], columnCount: number) => {
   const ownerColumnWidth = getColumnWidthPercent(columnCount)
@@ -554,14 +450,7 @@ const layoutTimelineRecords = (
     const view = toRecordView(record, clipped.startMin, clipped.endMin)
     const top = minutesToY(clipped.startMin)
     const bottom = minutesToY(clipped.endMin)
-    const hasDetail = view.detail.trim().length > 0
-    let minHeight = MIN_CARD_HEIGHT
-
-    if (hasDetail) {
-      minHeight = view.isCompact ? COMPACT_CARD_WITH_DETAIL_HEIGHT : MIN_CARD_WITH_DETAIL_HEIGHT
-    } else if (view.isCompact) {
-      minHeight = COMPACT_CARD_HEIGHT
-    }
+    const minHeight = getRecordMinHeight(record, clipped.startMin, clipped.endMin, columnCount)
 
     view.top = top
     view.height = Math.max(minHeight, bottom - top)
@@ -611,9 +500,14 @@ const buildDayBoard = (
   activeFilter: string,
 ) => {
   const columnLayout = getBoardColumnLayout(records, singleUserMode, activeFilter)
-  const stretchWindows = detectStretchWindows(records, selectedDate, rangeStart, rangeEnd)
-  let segments = buildTimelineSegments(stretchWindows, rangeStart, rangeEnd)
-  let layout = layoutBoardContent(
+  const segments = buildTimelineSegments(
+    records,
+    selectedDate,
+    rangeStart,
+    rangeEnd,
+    columnLayout.columnCount,
+  )
+  const layout = layoutBoardContent(
     records,
     selectedDate,
     rangeStart,
@@ -621,24 +515,6 @@ const buildDayBoard = (
     segments,
     columnLayout.columnCount,
   )
-
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const refined = refineStretchSegments(segments, layout.recordViews)
-
-    if (!refined.changed) {
-      break
-    }
-
-    segments = refined.segments
-    layout = layoutBoardContent(
-      records,
-      selectedDate,
-      rangeStart,
-      rangeEnd,
-      segments,
-      columnLayout.columnCount,
-    )
-  }
 
   const boardHeight = Math.max(
     layout.baseBoardHeight,
@@ -662,7 +538,7 @@ Component({
     filters: getOwnerFilterStateLocal('all').filters,
     activeFilter: getOwnerFilterStateLocal('all').activeFilter,
     singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
-    boardHeight: buildBoardHeight(DAY_START_MINUTES, DAY_END_MINUTES),
+    boardHeight: ((DAY_END_MINUTES - DAY_START_MINUTES) / 60) * HOUR_HEIGHT,
     timelineMarkers: [] as TimelineMarker[],
     records: [] as CompletedRecordView[],
     nowCursor: { visible: false, top: 0, label: '' } as NowCursor,
@@ -716,14 +592,24 @@ Component({
     },
     async refreshOwnerFilters() {
       const prevFilter = this.data.activeFilter
+      const prevPartnerAvatarUrl = this.data.partnerAvatarUrl
+      const prevAvatarUrl = this.data.avatarUrl
       const state = await getOwnerFilterState(prevFilter)
+      const partnerAvatarUrl = getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner')
+      const avatarUrl = getDisplayAvatarUrl() || getOwnerAvatarUrl('me')
       this.setData({
         filters: state.filters,
         activeFilter: state.activeFilter,
         singleUserMode: state.singleUserMode,
+        partnerAvatarUrl,
+        avatarUrl,
       })
 
-      if (state.activeFilter !== prevFilter) {
+      if (
+        state.activeFilter !== prevFilter ||
+        partnerAvatarUrl !== prevPartnerAvatarUrl ||
+        avatarUrl !== prevAvatarUrl
+      ) {
         this.refreshRecords()
       }
     },

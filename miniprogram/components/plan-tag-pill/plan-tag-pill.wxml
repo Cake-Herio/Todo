@@ -1,4 +1,4 @@
 <text
   class="plan-tag-pill plan-tag-pill--{{size}} {{active ? 'is-active' : ''}} ext-class"
-  style="background: {{backgroundColor}}; color: {{labelColor}};"
+  style="background: {{backgroundColor}}; color: {{labelColor}}; box-shadow: {{activeBoxShadow}};"
 >{{name}}</text>

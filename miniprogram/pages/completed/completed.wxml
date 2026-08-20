@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
 <navigation-bar title="已完成" back="{{false}}" color="#2F3A34" background="#EBF5EF"></navigation-bar>
 
 <scroll-view class="scroll-page" scroll-y type="list">

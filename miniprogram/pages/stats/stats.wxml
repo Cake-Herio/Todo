@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
 <view class="stats-page-shell" style="{{pageFontStyle}}">
   <scroll-view class="scroll-page stats-scroll" scroll-y type="list">
     <view
@@ -95,23 +95,29 @@
           </view>
         </view>
       </view>
+      </block>
 
       <view class="section-title">标签占比</view>
-      <view class="chart-card card" catchtouchstart="noop" catchtouchend="noop">
-        <swiper class="chart-swiper" current="{{tagChartView === 'bar' ? 1 : 0}}" bindchange="onTagChartSwiperChange" duration="250">
-          <swiper-item>
-            <canvas type="2d" id="pie-canvas" class="chart-canvas"></canvas>
-          </swiper-item>
-          <swiper-item>
-            <canvas type="2d" id="bar-canvas" class="chart-canvas"></canvas>
-          </swiper-item>
-        </swiper>
-        <view class="chart-indicators">
-          <view class="chart-dot {{tagChartView === 'pie' ? 'active' : ''}}"></view>
-          <view class="chart-dot {{tagChartView === 'bar' ? 'active' : ''}}"></view>
+      <view class="chart-card chart-card-pie card" catchtouchstart="noop" catchtouchend="noop">
+        <view class="chart-panel">
+          <view class="chart-canvas">
+            <ec-canvas id="pie-chart" canvas-id="stats-pie" ec="{{pieEc}}" class="chart-ec-canvas"></ec-canvas>
+          </view>
+          <view class="chart-center-copy">
+            <text class="chart-center-value">{{totalFocus}}</text>
+            <text class="chart-center-label">总专注</text>
+          </view>
         </view>
       </view>
-      </block>
+
+      <view class="section-title">时段分布</view>
+      <view class="chart-card chart-card-bar card" catchtouchstart="noop" catchtouchend="noop">
+        <view class="chart-panel">
+          <view class="chart-canvas">
+            <ec-canvas id="bar-chart" canvas-id="stats-bar" ec="{{barEc}}" class="chart-ec-canvas"></ec-canvas>
+          </view>
+        </view>
+      </view>
     </view>
   </scroll-view>
 
@@ -137,7 +143,7 @@
             catchtap="toggleTagFilter"
             data-tag="{{item.tag}}"
           >
-            <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" />
+            <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" active="{{item.checked}}" />
             <view class="tag-filter-item-check {{item.checked ? 'is-checked' : ''}}">
               <text wx:if="{{item.checked}}" class="tag-filter-item-check-icon">✓</text>
             </view>

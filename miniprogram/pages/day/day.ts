@@ -49,12 +49,6 @@ interface TimedInterval {
 
 const TIMED_LANE_GAP = 2
 const TIMED_SINGLE_WIDTH_PERCENT = 75
-const TIMED_CARD_PADDING = 20
-const TIMED_TIME_ROW = 22
-const TIMED_TITLE_ROW = 34
-const TIMED_REMARK_GAP = 8
-const TIMED_REMARK_LINE_HEIGHT = 22
-const TIMED_COLUMN_BASE_WIDTH = 315
 
 interface TimelineMarker {
   label: string
@@ -77,13 +71,31 @@ interface PeriodZone {
 
 const TIMELINE_START = 6
 const TIMELINE_END = 24
-const HOUR_HEIGHT = 88
+const HOUR_HEIGHT = 44
+const TIMED_CARD_MIN_HEIGHT = 144
+const TIMED_REMARK_LINE_HEIGHT = 31
 const PERIOD_CARD_HEIGHT = 124
 const PERIOD_CARD_GAP = 8
 const PERIOD_LABEL_HEIGHT = 28
 const PERIOD_ZONE_PADDING = 12
 
 const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+
+const getTimedPlanMinHeight = (plan: Plan) => {
+  const remark = `${plan.remark || ''}`.trim()
+
+  if (!remark) {
+    return TIMED_CARD_MIN_HEIGHT
+  }
+
+  const textWidth = Array.from(remark).reduce(
+    (width, character) => width + (/^[a-zA-Z0-9 .,!?;:'\-]$/.test(character) ? 12 : 22),
+    0,
+  )
+  const lineCount = Math.max(1, Math.ceil(textWidth / 400))
+
+  return TIMED_CARD_MIN_HEIGHT + (lineCount - 1) * TIMED_REMARK_LINE_HEIGHT
+}
 
 const statusTextMap = {
   pending: '待开始',
@@ -329,31 +341,6 @@ const toTimedPlanView = (plan: Plan, selectedDate: string): TimedPlanView => ({
   isCompact: false,
 })
 
-const estimateRemarkLines = (remark: string, widthPercent: number) => {
-  const cardWidth = Math.max(60, TIMED_COLUMN_BASE_WIDTH * (widthPercent / 100) - 6)
-  const charsPerLine = Math.max(3, Math.floor(cardWidth / 17))
-
-  return remark.split('\n').reduce((total, line) => {
-    const trimmed = line.trim()
-
-    if (!trimmed) {
-      return total + 1
-    }
-
-    return total + Math.ceil(trimmed.length / charsPerLine)
-  }, 0)
-}
-
-const estimateTimedCardContentHeight = (plan: TimedPlanView) => {
-  let height = TIMED_CARD_PADDING + TIMED_TIME_ROW + TIMED_TITLE_ROW
-
-  if (plan.remark) {
-    height += TIMED_REMARK_GAP + estimateRemarkLines(plan.remark, plan.widthPercent) * TIMED_REMARK_LINE_HEIGHT
-  }
-
-  return Math.ceil(height) + 6
-}
-
 const collectTimeBreakpoints = (rawPlans: Plan[]) => {
   const points = new Set<number>()
   points.add(TIMELINE_START * 60)
@@ -373,16 +360,7 @@ const collectTimeBreakpoints = (rawPlans: Plan[]) => {
   return [...points].sort((a, b) => a - b)
 }
 
-const sumSegmentHeights = (segments: TimeSegment[], startMin: number, endMin: number) =>
-  segments.reduce((sum, segment) => {
-    if (segment.endMin <= startMin || segment.startMin >= endMin) {
-      return sum
-    }
-
-    return sum + segment.height
-  }, 0)
-
-const buildAdaptiveTimeScale = (timedPlans: TimedPlanView[], rawPlans: Plan[]) => {
+const buildLinearTimeScale = (rawPlans: Plan[]) => {
   const breakpoints = collectTimeBreakpoints(rawPlans)
   const segments: TimeSegment[] = []
 
@@ -391,41 +369,37 @@ const buildAdaptiveTimeScale = (timedPlans: TimedPlanView[], rawPlans: Plan[]) =
     const endMin = breakpoints[index + 1]
     const duration = endMin - startMin
     const baseHeight = (duration / 60) * HOUR_HEIGHT
+    const cardHeightDemand = rawPlans.reduce((maxHeight, plan) => {
+      if (!plan.startTime || !plan.endTime) {
+        return maxHeight
+      }
+
+      const planStart = parseTimeToMinutes(plan.startTime)
+      const planEnd = Math.min(parseTimeToMinutes(plan.endTime, true), TIMELINE_END * 60)
+      const overlapStart = Math.max(startMin, planStart)
+      const overlapEnd = Math.min(endMin, planEnd)
+      const overlapDuration = overlapEnd - overlapStart
+
+      if (overlapDuration <= 0 || planEnd <= planStart) {
+        return maxHeight
+      }
+
+      // Allocate the card's minimum height across the time it occupies.
+      // This keeps long cards proportional while short cards still have room for content.
+      const minHeight = getTimedPlanMinHeight(plan)
+      return Math.max(maxHeight, minHeight * (overlapDuration / (planEnd - planStart)))
+    }, 0)
 
     segments.push({
       startMin,
       endMin,
       baseHeight,
-      height: baseHeight,
+      height: Math.max(baseHeight, cardHeightDemand),
     })
   }
 
-  timedPlans.forEach((plan) => {
-    const raw = rawPlans.find((item) => item.id === plan.id)
-
-    if (!raw?.startTime || !raw.endTime) {
-      return
-    }
-
-    const startMin = parseTimeToMinutes(raw.startTime)
-    const endMin = parseTimeToMinutes(raw.endTime, true)
-    const baseTotal = sumSegmentHeights(segments, startMin, endMin)
-    const contentHeight = estimateTimedCardContentHeight(plan)
-
-    if (contentHeight <= baseTotal || baseTotal <= 0) {
-      return
-    }
-
-    const factor = contentHeight / baseTotal
-
-    segments.forEach((segment) => {
-      if (segment.endMin <= startMin || segment.startMin >= endMin) {
-        return
-      }
-
-      segment.height = Math.max(segment.height, segment.baseHeight * factor)
-    })
-  })
+  // Keep one shared piecewise scale for markers, cards, current time, and zones.
+  // Only segments occupied by cards are allowed to grow beyond the compact base scale.
 
   const breakpointY = new Map<number, number>()
   let y = 0
@@ -480,7 +454,7 @@ const applyTimeScaleToTimedPlans = (plans: TimedPlanView[], rawPlans: Plan[], mi
     const bottom = minutesToY(endMin)
 
     plan.top = top
-    plan.height = Math.max(1, bottom - top)
+    plan.height = Math.max(getTimedPlanMinHeight(raw), bottom - top)
     plan.isCompact = endMin - startMin <= 20
   })
 }
@@ -752,30 +726,37 @@ Component({
     },
     onLoad(query: { date?: string }) {
       this.initPageInsets()
-      const prevDate = this.data.selectedDate
       const selectedDate = query.date || getToday()
-      const dateChanged = prevDate !== selectedDate
 
       this.setData({
         selectedDate,
         dateTitle: formatDateTitle(selectedDate),
-        ...(dateChanged ? { hasAutoScrolled: false, boardVisible: false } : {}),
+        hasAutoScrolled: false,
+        boardVisible: false,
       })
       this.refreshPlans()
     },
     async refreshOwnerFilters() {
       const prevFilter = this.data.activeFilter
+      const prevPartnerAvatarUrl = this.data.partnerAvatarUrl
+      const prevAvatarUrl = this.data.avatarUrl
       const state = await getOwnerFilterState(prevFilter)
+      const partnerAvatarUrl = getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner')
+      const avatarUrl = getDisplayAvatarUrl() || getOwnerAvatarUrl('me')
       this.setData({
         filters: state.filters,
         activeFilter: state.activeFilter,
         singleUserMode: state.singleUserMode,
         partnerNickname: getPartnerDisplayNickname(),
-        partnerAvatarUrl: getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner'),
-        avatarUrl: getDisplayAvatarUrl() || getOwnerAvatarUrl('me'),
+        partnerAvatarUrl,
+        avatarUrl,
       })
 
-      if (state.activeFilter !== prevFilter) {
+      if (
+        state.activeFilter !== prevFilter ||
+        partnerAvatarUrl !== prevPartnerAvatarUrl ||
+        avatarUrl !== prevAvatarUrl
+      ) {
         this.refreshPlans()
       }
     },
@@ -788,7 +769,7 @@ Component({
         timedRaw.map((plan) => toTimedPlanView(plan, selectedDate)),
         timedRaw,
       )
-      const { minutesToY } = buildAdaptiveTimeScale(timedPlans, timedRaw)
+      const { minutesToY } = buildLinearTimeScale(timedRaw)
       applyTimeScaleToTimedPlans(timedPlans, timedRaw, minutesToY)
 
       const periodPlans = plans.filter((plan) => !isTimedPlan(plan) && getPeriodKey(plan))

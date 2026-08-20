@@ -31,7 +31,7 @@ import {
 import { getMyTimedRecords, getToday } from '../../utils/data'
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
 import { createRoom, deleteRoom, joinRoom, leaveRoom, listMyRooms, switchRoom, type RoomSummary } from '../../utils/shared-space-room'
-import { getDisplayAvatarUrl, getDisplayNickname, getSession, isProfileComplete, isSessionReady, isSharedSpaceMode, isSoloMode } from '../../utils/session'
+import { getDisplayAvatarUrl, getDisplayNickname, getSession, isProfileComplete, isSessionReady, isSharedSpaceMode } from '../../utils/session'
 
 const buildSettingsItems = (fontPreference: FontPreferenceKey, roomTotalCount = 0) => {
   const todayTimedCount = getMyTimedRecords(getToday()).length
@@ -110,11 +110,9 @@ Component({
       const fontPreference = getFontPreference()
       const cloudStatusText = isSharedSpaceMode()
         ? '已连接共享空间'
-        : isSoloMode()
-          ? '单人模式（仅本地）'
-          : isSessionReady()
-            ? '已连接（UI 读本地）'
-            : '未连接'
+        : isProfileComplete()
+          ? '账号已同步'
+          : '未连接'
 
       this.setData({
         cloudStatusText,
@@ -122,11 +120,9 @@ Component({
         profileName,
         profileAvatarUrl: getDisplayAvatarUrl(),
         profileInitial: profileName.slice(0, 1),
-        profileHint: isSoloMode()
-          ? '数据保存在本机，不加入共享分组'
-          : isProfileComplete()
-            ? 'UI 读本地 · 云后台同步'
-            : '请在首页完善头像昵称',
+        profileHint: isProfileComplete()
+          ? '账号资料已同步到云端'
+          : '请在首页完善头像昵称',
         activitySmithEnabled: isActivitySmithEnabled(),
         activitySmithKeyConfigured: isActivitySmithKeyConfigured(),
         barkEnabled: isBarkEnabled(),
@@ -148,7 +144,6 @@ Component({
         pageFontStyle,
         items: buildSettingsItems(key),
       })
-      this.selectComponent('#font-page-meta')?.refresh?.(pageFontStyle)
       wx.showToast({
         title: '已切换字体',
         icon: 'success',
@@ -717,7 +712,7 @@ Component({
     async syncCloudData() {
       if (!isSessionReady()) {
         wx.showToast({
-          title: isSoloMode() ? '单人模式不支持云同步' : '请先加入共享空间',
+          title: '请先加入共享空间',
           icon: 'none',
         })
         return

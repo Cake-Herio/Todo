@@ -11,6 +11,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   text-shadow: 0 1rpx 2rpx rgba(0, 0, 0, 0.14);
+  transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
 .plan-tag-pill--md {
@@ -39,6 +40,13 @@
   line-height: 30rpx;
 }
 
+.plan-tag-pill--xs-focus {
+  min-height: 40rpx;
+  padding: 0 16rpx;
+  font-size: 24rpx;
+  line-height: 40rpx;
+}
+
 .plan-tag-pill.is-active {
-  box-shadow: 0 0 0 3rpx #fffdf7, 0 0 0 6rpx rgba(47, 58, 52, 0.28);
+  transform: none;
 }

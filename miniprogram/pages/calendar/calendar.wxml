@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
 <template name="calendarGrid">
   <view class="calendar-card card">
     <view class="weekday-row">

@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
 <view class="day-page-shell completed-day-shell" style="{{pageFontStyle}}">
 <template name="completedRecordCard">
   <view class="schedule-card is-timed">

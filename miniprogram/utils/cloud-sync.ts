@@ -1,6 +1,8 @@
 import { registerCloudMutateHandler } from './cloud-bridge'
 import { getCloudEnvId, isCloudEnabled, SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 import {
+  clearCompletedRecordDeletion,
+  getDeletedCompletedRecordIds,
   getLocalData,
   saveLocalData,
   type CompletedRecord,
@@ -21,6 +23,7 @@ export const resetCloudBootstrap = () => {
 let syncPromise: Promise<boolean> | null = null
 let pushTimer: ReturnType<typeof setTimeout> | null = null
 let pushPromise: Promise<void> | null = null
+let bootstrapPromise: Promise<boolean> | null = null
 
 interface CloudPlanDoc extends Omit<Plan, 'ownerKey' | 'ownerName' | 'ownerAvatar' | 'color'> {
   _id?: string
@@ -244,6 +247,28 @@ const pushLocalDataToCloud = async (session: UserSession) => {
 
   const localPlanIds = new Set(local.plans.map((plan) => plan.id))
   const localRecordIds = new Set(local.completedRecords.map((record) => record.id))
+  const pendingDeletedRecordIds = getDeletedCompletedRecordIds()
+
+  await Promise.all(
+    pendingDeletedRecordIds.map(async (recordId) => {
+      try {
+        const result = await wx.cloud.callFunction({
+          name: SHARED_SPACE_CLOUD_FUNCTION,
+          data: {
+            action: 'deleteCompletedRecord',
+            payload: { id: recordId },
+          },
+        })
+        const payload = result.result as { ok?: boolean }
+        if (!payload?.ok) {
+          throw new Error('云端删除完成记录失败')
+        }
+        clearCompletedRecordDeletion(recordId)
+      } catch (error) {
+        console.warn('[cloud] delete completed record failed', { recordId, error })
+      }
+    }),
+  )
 
   await Promise.all([
     ...local.plans.map((plan) =>
@@ -362,9 +387,21 @@ export const bootstrapSharedSpace = async (): Promise<boolean> => {
     return false
   }
 
-  await refreshSpaceMembersFromCloud()
-  const [dataChanged, tagsChanged] = await Promise.all([syncFromCloud(), syncPlanTagsFromCloud()])
-  return dataChanged || tagsChanged
+  if (bootstrapPromise) {
+    return bootstrapPromise
+  }
+
+  bootstrapPromise = (async () => {
+    await refreshSpaceMembersFromCloud()
+    const [dataChanged, tagsChanged] = await Promise.all([syncFromCloud(), syncPlanTagsFromCloud()])
+    return dataChanged || tagsChanged
+  })()
+
+  try {
+    return await bootstrapPromise
+  } finally {
+    bootstrapPromise = null
+  }
 }
 
 /** 从云拉取并写入本地缓存，UI 不直接读云 */
@@ -416,7 +453,10 @@ export const syncFromCloud = async (): Promise<boolean> => {
       }
 
       const cloudPlans = cloudPlanDocs.map((doc) => cloudPlanToPlan(doc, session))
-      const cloudRecords = cloudRecordDocs.map((doc) => cloudRecordToRecord(doc, session))
+      const deletedRecordIds = new Set(getDeletedCompletedRecordIds())
+      const cloudRecords = cloudRecordDocs
+        .filter((doc) => !deletedRecordIds.has(doc.id))
+        .map((doc) => cloudRecordToRecord(doc, session))
       const plans = mergeByUpdatedAt(local.plans, cloudPlans)
       const completedRecords = mergeRecordsByCompletedAt(local.completedRecords, cloudRecords)
 

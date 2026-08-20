@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
   <view class="focus-page-bg"></view>
 
   <view style="width:100%;height:100vh;background:#faf9f6;">
@@ -18,7 +18,6 @@
               </view>
               <view class="ring-glow {{controlsPhase !== 'idle' ? (isPaused ? 'is-paused' : '') : 'is-idle'}}"></view>
               <view class="ring-center">
-                <text class="tree-label">树</text>
                 <text class="time-display">{{timeText}}</text>
                 <text class="time-hint">{{hintText}}</text>
               </view>
@@ -34,15 +33,17 @@
                 enable-flex
                 bindscroll="onIdleTagScroll"
               >
-                <view class="focus-idle-tag-list">
-                  <view
-                    wx:for="{{tags}}"
-                    wx:key="*this"
-                    class="focus-idle-tag {{selectedTag === item ? 'is-active' : ''}}"
-                    data-tag="{{item}}"
-                    bindtap="selectTag"
-                  >
-                    {{item}}
+                <view class="focus-idle-tag-list {{centerIdleTags ? 'is-centered' : ''}}">
+                  <view class="focus-idle-tag-content">
+                    <view
+                      wx:for="{{tags}}"
+                      wx:key="*this"
+                      class="focus-idle-tag-option"
+                      data-tag="{{item}}"
+                      bindtap="selectTag"
+                    >
+                      <plan-tag-pill name="{{item}}" size="xs-focus" active="{{selectedTag === item}}" />
+                    </view>
                   </view>
                 </view>
               </scroll-view>

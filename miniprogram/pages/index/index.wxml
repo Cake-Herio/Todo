@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
 <view class="index-page-shell" style="{{pageFontStyle}}">
 <navigation-bar extClass="home-nav-bar" title="MyForest" back="{{false}}" color="#609873" background="#FAF9F6">
   <view
@@ -351,16 +351,24 @@
 <view wx:if="{{isLoginSheetVisible}}" class="login-sheet-mask mask-fade {{isLoginSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtouchmove="noop" bindtap="closeLoginSheet">
   <view class="login-sheet-panel panel-pop {{isLoginSheetClosing ? 'is-closing' : ''}}" style="{{pageFontStyle}}" catchtap="noop">
     <view class="login-sheet-title">完善个人信息</view>
-    <view class="login-sheet-desc">填写邀请码可加入共享空间；不填则单人使用</view>
+    <view class="login-sheet-desc">邀请码可选，稍后也可加入共享空间</view>
     <view class="login-sheet-form">
       <view class="login-sheet-avatar-wrap">
-        <button class="login-sheet-avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseLoginAvatar">
-          <image wx:if="{{loginAvatarUrl}}" class="login-sheet-avatar" src="{{loginAvatarUrl}}" mode="aspectFill"></image>
+        <button
+          class="login-sheet-avatar-btn"
+          type="default"
+          open-type="chooseAvatar"
+          bindtap="onLoginAvatarButtonTap"
+          bindchooseavatar="onChooseLoginAvatar"
+        >
+          <image wx:if="{{loginAvatarPreviewUrl}}" class="login-sheet-avatar" src="{{loginAvatarPreviewUrl}}" mode="aspectFill"></image>
           <view wx:else class="login-sheet-avatar login-sheet-avatar-placeholder">
             <view class="login-sheet-avatar-icon">+</view>
-            <view class="login-sheet-avatar-text">选择头像</view>
           </view>
         </button>
+        <view class="login-sheet-avatar-label">
+          {{loginAvatarPreviewUrl ? '重新选择微信头像' : '点击选择微信头像'}}
+        </view>
       </view>
       <input
         class="login-sheet-field"
@@ -397,7 +405,7 @@
     <view class="action-icon action-icon-list"></view>
     <view class="action-copy">
       <view class="action-title">计划表</view>
-      <view class="action-subtitle">{{isRecording ? '松开生成计划草稿' : '长按说话AI生成计划'}}</view>
+      <view class="action-subtitle">{{isRecording ? '松开生成计划草稿' : '长按说话让AI生成计划'}}</view>
     </view>
   </button>
 

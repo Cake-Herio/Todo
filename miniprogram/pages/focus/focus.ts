@@ -202,6 +202,7 @@ Component({
     focusCompletedAt: 0,
     timePreviewText: '',
     bindablePlans: [] as BindablePlanView[],
+    centerIdleTags: false,
     showTagScrollFadeLeft: false,
     showTagScrollFadeRight: false,
     showIdleTagScrollFadeLeft: false,
@@ -374,6 +375,7 @@ Component({
         accumulatedSeconds: Math.floor(this.accumulatedElapsedMs / 1000),
         segmentStartedAt: this.data.isPaused ? 0 : this.focusSegmentStartedAt,
         isPaused: this.data.isPaused,
+        tag: this.data.selectedTag.trim(),
       }
     },
     getActivitySmithSessionPayload() {
@@ -501,7 +503,7 @@ Component({
         console.warn('[focus] cloud restore failed, trying local', error)
       }
 
-      // 云 session 不存在 → 回落本地存储（solo 模式兜底）
+      // 共享专注状态尚不可用时，回退到本地保存的进行中计时。
       const local = getLocalFocusSession()
       if (local) {
         this.stopTick()
@@ -563,6 +565,7 @@ Component({
           accumulatedSeconds: 0,
           segmentStartedAt: 0,
           isPaused: false,
+          tag: this.data.selectedTag.trim(),
         })
       }
       this.notifyRoomFocusEvent('start')
@@ -687,13 +690,14 @@ Component({
       wx.nextTick(() => {
         const query = wx.createSelectorQuery().in(this)
         query.select('.focus-idle-tag-scroll').boundingClientRect()
-        query.select('.focus-idle-tag-list').boundingClientRect()
+        query.select('.focus-idle-tag-content').boundingClientRect()
         query.exec((res) => {
           const viewportWidth = res[0]?.width || 0
-          const listWidth = res[1]?.width || 0
+          const contentWidth = res[1]?.width || 0
           this.idleTagScrollViewportWidth = viewportWidth
-          const fades = getScrollFadeState(scrollLeft, listWidth, viewportWidth)
+          const fades = getScrollFadeState(scrollLeft, contentWidth, viewportWidth)
           this.setData({
+            centerIdleTags: contentWidth <= viewportWidth,
             showIdleTagScrollFadeLeft: fades.showLeft,
             showIdleTagScrollFadeRight: fades.showRight,
           })
@@ -706,6 +710,7 @@ Component({
       const fades = getScrollFadeState(scrollLeft, scrollWidth, viewportWidth)
 
       this.setData({
+        centerIdleTags: scrollWidth <= viewportWidth,
         showIdleTagScrollFadeLeft: fades.showLeft,
         showIdleTagScrollFadeRight: fades.showRight,
       })

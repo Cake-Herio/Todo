@@ -11,8 +11,10 @@
           wx:key="key"
           wx:for-item="avatar"
           class="filter-avatar {{avatar.key === 'partner' ? 'blue' : 'green'}}"
+          data-avatar-url="{{avatar.url}}"
           src="{{avatar.url}}"
           mode="aspectFill"
+          binderror="onAvatarError"
         ></image>
       </view>
       <text class="filter-label">{{pinnedFilter.label}}</text>
@@ -43,8 +45,10 @@
               wx:key="key"
               wx:for-item="avatar"
               class="filter-avatar {{avatar.key === 'partner' ? 'blue' : 'green'}}"
+              data-avatar-url="{{avatar.url}}"
               src="{{avatar.url}}"
               mode="aspectFill"
+              binderror="onAvatarError"
             ></image>
           </view>
           <text class="filter-label">{{item.label}}</text>

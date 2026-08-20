@@ -177,7 +177,7 @@ export const sendBarkEnableTestPush = async () => {
 
 /**
  * 通知同组成员当前用户的专注状态变化（开始/暂停/继续/结束）
- * 仅 sharedSpace 模式下有效；云函数内自动跳过 solo 用户和非组用户
+ * 仅加入共享空间后有效；云函数会跳过未加入房间的账号。
  */
 export const notifyRoomFocusChange = async (payload: RoomFocusChangePayload) => {
   try {

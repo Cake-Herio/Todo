@@ -1,6 +1,6 @@
 import { isCloudEnabled, SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 import { resolveTagBindingFromList } from './tag-binding'
-import { getSession, isSessionReady, isSoloMode } from './session'
+import { getSession, isSessionReady } from './session'
 
 export type PlanTagVisibility = 'shared' | 'private'
 
@@ -37,8 +37,10 @@ interface TagCloudResult {
 }
 
 const TAG_CACHE_KEY = 'myforest_plan_tags_cache_v1'
+const TAG_CACHE_READY_KEY = 'myforest_plan_tags_cache_ready_v1'
+const TAG_CACHE_SCOPE_KEY = 'myforest_plan_tags_cache_scope_v1'
 const LEGACY_CUSTOM_KEY = 'myforest_custom_plan_tags_v1'
-const SOLO_TAGS_KEY = 'myforest_solo_plan_tags_v1'
+const PERSONAL_TAGS_KEY = 'myforest_personal_plan_tags_v1'
 const TAGS_MIGRATED_KEY = 'myforest_plan_tags_migrated_v1'
 
 const DEFAULT_TAG_OPTIONS: PlanTagOption[] = [
@@ -77,7 +79,7 @@ export const TAG_PALETTE = [
 export const DEFAULT_PLAN_TAGS = DEFAULT_TAG_OPTIONS.map((item) => item.name)
 
 const normalizeHexColor = (value: string) => {
-  const trimmed = value.trim()
+  const trimmed = `${value || ''}`.trim()
   if (!trimmed) {
     return ''
   }
@@ -90,13 +92,33 @@ const normalizeHexColor = (value: string) => {
   return withHash.toUpperCase()
 }
 
+const getBuiltinTag = (name: string) => DEFAULT_TAG_OPTIONS.find((item) => item.name === name)
+
+const normalizeTagColor = (name: string, color: string) => {
+  const builtin = getBuiltinTag(name)
+  const normalized = normalizeHexColor(color)
+
+  if (!normalized) {
+    return builtin?.color || '#7A857D'
+  }
+
+  // Older cloud tag records could lose their color and fall back to the
+  // neutral "其它" color. Restore the canonical color for built-in tags.
+  if (builtin && normalized === '#7A857D' && builtin.color !== '#7A857D') {
+    return builtin.color
+  }
+
+  return normalized
+}
+
 const mapCloudTag = (doc: CloudPlanTagDoc): PlanTagOption => ({
   id: doc.id,
   name: doc.name,
-  color: doc.color,
+  color: normalizeTagColor(doc.name, doc.color),
   visibility: doc.visibility,
   ownerOpenid: doc.ownerOpenid,
   sharedSpaceId: doc.sharedSpaceId,
+  isBuiltin: Boolean(getBuiltinTag(doc.name)),
 })
 
 const getLegacyCustomTags = (): PlanTagOption[] => {
@@ -115,8 +137,8 @@ const getLegacyCustomTags = (): PlanTagOption[] => {
     }))
 }
 
-const getSoloTags = (): PlanTagOption[] => {
-  const stored = wx.getStorageSync(SOLO_TAGS_KEY) as PlanTagOption[] | ''
+const getPersonalTags = (): PlanTagOption[] => {
+  const stored = wx.getStorageSync(PERSONAL_TAGS_KEY) as PlanTagOption[] | ''
   if (!Array.isArray(stored)) {
     return []
   }
@@ -124,8 +146,8 @@ const getSoloTags = (): PlanTagOption[] => {
   return stored.filter((item) => item?.name && item?.color)
 }
 
-const saveSoloTags = (tags: PlanTagOption[]) => {
-  wx.setStorageSync(SOLO_TAGS_KEY, tags)
+const savePersonalTags = (tags: PlanTagOption[]) => {
+  wx.setStorageSync(PERSONAL_TAGS_KEY, tags)
 }
 
 export const getCachedCloudTags = (): PlanTagOption[] => {
@@ -134,11 +156,29 @@ export const getCachedCloudTags = (): PlanTagOption[] => {
     return []
   }
 
-  return stored.filter((item) => item?.name && item?.color && item?.id)
+  return stored
+    .filter((item) => item?.name && item?.id)
+    .map((item) => ({
+      ...item,
+      color: normalizeTagColor(item.name, item.color),
+      isBuiltin: item.isBuiltin || Boolean(getBuiltinTag(item.name)),
+    }))
 }
 
 export const saveCachedCloudTags = (tags: PlanTagOption[]) => {
   wx.setStorageSync(TAG_CACHE_KEY, tags)
+  wx.setStorageSync(TAG_CACHE_READY_KEY, true)
+  const session = getSession()
+  wx.setStorageSync(
+    TAG_CACHE_SCOPE_KEY,
+    session?.sharedSpaceId && session.openid ? `${session.sharedSpaceId}:${session.openid}` : '',
+  )
+}
+
+const hasCachedCloudTags = () => {
+  const session = getSession()
+  const scope = session?.sharedSpaceId && session.openid ? `${session.sharedSpaceId}:${session.openid}` : ''
+  return Boolean(wx.getStorageSync(TAG_CACHE_READY_KEY)) && wx.getStorageSync(TAG_CACHE_SCOPE_KEY) === scope
 }
 
 const mergeTagsByName = (...groups: PlanTagOption[]) => {
@@ -153,13 +193,15 @@ const mergeTagsByName = (...groups: PlanTagOption[]) => {
 }
 
 const getEffectiveTags = (): PlanTagOption[] => {
-  if (isSoloMode()) {
-    return mergeTagsByName(...DEFAULT_TAG_OPTIONS, ...getSoloTags(), ...getLegacyCustomTags())
+  if (!isSessionReady()) {
+    return mergeTagsByName(...DEFAULT_TAG_OPTIONS, ...getPersonalTags(), ...getLegacyCustomTags())
   }
 
   if (isSessionReady()) {
     const cloudTags = getCachedCloudTags()
-    if (cloudTags.length) {
+    if (hasCachedCloudTags()) {
+      // Keep built-in tags available even when an older cloud cache is
+      // incomplete; cloud-defined custom tags still override by name.
       return mergeTagsByName(...DEFAULT_TAG_OPTIONS, ...cloudTags)
     }
   }
@@ -299,11 +341,12 @@ export const getContrastTextColor = (backgroundColor: string) => {
 export const getPlanTagColor = (tag: string) => {
   const byId = getPlanTagById(tag)
   if (byId) {
-    return byId.color
+    return normalizeTagColor(byId.name, byId.color)
   }
 
   const resolved = resolvePlanTag(tag)
-  return getPlanTagOptions().find((item) => item.name === resolved)?.color || '#7A857D'
+  const option = getPlanTagOptions().find((item) => item.name === resolved)
+  return option ? normalizeTagColor(option.name, option.color) : '#7A857D'
 }
 
 export const getTagPillColorsById = (tagId: string) => {
@@ -438,12 +481,12 @@ export const addPlanTagOption = async (
   }
 
   const nextTag: PlanTagOption = {
-    id: `solo-${Date.now()}`,
+    id: `personal-${Date.now()}`,
     name: trimmedName,
     color: normalizedColor,
     visibility: 'private',
   }
-  saveSoloTags([...getSoloTags(), nextTag])
+  savePersonalTags([...getPersonalTags(), nextTag])
   return { ok: true, tagId: nextTag.id }
 }
 
@@ -497,19 +540,19 @@ export const updatePlanTagOption = async (
     }
   }
 
-  const soloTags = getSoloTags()
-  const targetIndex = soloTags.findIndex((item) => item.id === id)
+  const personalTags = getPersonalTags()
+  const targetIndex = personalTags.findIndex((item) => item.id === id)
   if (targetIndex < 0) {
     return { ok: false, message: '标签不存在' }
   }
 
-  const nextTags = [...soloTags]
+  const nextTags = [...personalTags]
   nextTags[targetIndex] = {
     ...nextTags[targetIndex],
     name: trimmedName,
     color: normalizedColor,
   }
-  saveSoloTags(nextTags)
+  savePersonalTags(nextTags)
   return { ok: true, tagId: id, name: trimmedName }
 }
 
@@ -534,6 +577,6 @@ export const deletePlanTagOption = async (id: string): Promise<{ ok: boolean; me
     }
   }
 
-  saveSoloTags(getSoloTags().filter((item) => item.id !== id))
+  savePersonalTags(getPersonalTags().filter((item) => item.id !== id))
   return { ok: true }
 }

@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
 <view class="tags-page-shell" style="{{pageFontStyle}}">
   <navigation-bar title="标签管理" color="#2F3A34" background="transparent"></navigation-bar>
 

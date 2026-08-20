@@ -1,17 +1,17 @@
-import { getFallbackAvatarUrl, toDisplayAvatarUrl } from './avatar-display'
+import { getAvatarDisplayUrl, preloadAvatar, uploadAvatarFile } from './avatar-display'
 import { DEFAULT_INVITE_CODE, SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 
 export interface UserSession {
   openid?: string
   sharedSpaceId?: string
   inviteVerified: boolean
-  soloMode?: boolean
   nickname: string
   avatarUrl: string
   profileCompleted?: boolean
   partnerOpenid?: string
   partnerNickname?: string
   partnerAvatarUrl?: string
+  partnerAvatarSourceUrl?: string
 }
 
 export interface UserProfileInput {
@@ -28,11 +28,7 @@ export const getSession = (): UserSession | null => {
     return null
   }
 
-  if (stored.soloMode) {
-    return stored.profileCompleted ? stored : null
-  }
-
-  if (!stored.openid || !stored.sharedSpaceId) {
+  if (!stored.openid || !stored.profileCompleted) {
     return null
   }
 
@@ -55,7 +51,6 @@ export const isSessionReady = () => {
   const session = getSession()
   return Boolean(
     session &&
-      !session.soloMode &&
       session.inviteVerified &&
       session.sharedSpaceId &&
       session.openid,
@@ -64,15 +59,10 @@ export const isSessionReady = () => {
 
 export const isSharedSpaceMode = () => isSessionReady()
 
-export const isSoloMode = () => {
-  const session = getSession()
-  return Boolean(session?.soloMode && session.profileCompleted)
-}
-
 /** 共享空间内暂无其他成员时，隐藏「对方 / 伙伴」相关 UI */
 export const shouldHidePartnerUi = () => {
   const session = getSession()
-  if (!session || session.soloMode || !isSharedSpaceMode()) {
+  if (!session || !isSharedSpaceMode()) {
     return true
   }
 
@@ -95,7 +85,7 @@ export const getDisplayNickname = () => {
 export const getDisplayAvatarUrl = () => {
   const session = getSession()
   if (session?.profileCompleted && session.avatarUrl) {
-    return session.avatarUrl
+    return getAvatarDisplayUrl(session.avatarUrl)
   }
   return ''
 }
@@ -109,25 +99,37 @@ export const getPartnerDisplayNickname = () => {
 
 export const getPartnerDisplayAvatarUrl = () => {
   const session = getSession()
-  if (session?.partnerAvatarUrl) {
-    return toDisplayAvatarUrl(session.partnerAvatarUrl, getFallbackAvatarUrl('partner'))
+  const sourceAvatarUrl = session?.partnerAvatarSourceUrl || session?.partnerAvatarUrl
+  if (sourceAvatarUrl) {
+    return getAvatarDisplayUrl(sourceAvatarUrl)
   }
 
   return ''
 }
 
-const isTempAvatarPath = (avatarUrl: string) =>
-  avatarUrl.startsWith('wxfile://') || avatarUrl.startsWith('http://tmp') || !avatarUrl.startsWith('cloud://')
+interface SaveProfileResult {
+  ok?: boolean
+  message?: string
+  openid?: string
+  nickname?: string
+  avatarUrl?: string
+}
 
-export const uploadAvatarToCloud = async (tempPath: string) => {
-  const ext = tempPath.match(/\.(\w+)(?:\?|$)/)?.[1] || 'png'
-  const cloudPath = `avatars/${Date.now()}.${ext}`
-  const uploadResult = await wx.cloud.uploadFile({
-    cloudPath,
-    filePath: tempPath,
+const saveProfileToCloud = async (profile: { nickname: string; avatarUrl: string }) => {
+  const result = await wx.cloud.callFunction({
+    name: SHARED_SPACE_CLOUD_FUNCTION,
+    data: {
+      action: 'saveProfile',
+      payload: profile,
+    },
   })
+  const payload = result.result as SaveProfileResult
 
-  return uploadResult.fileID
+  if (!payload?.ok || !payload.openid) {
+    throw new Error(payload?.message || '账号资料保存失败')
+  }
+
+  return payload
 }
 
 export const saveUserProfile = async ({ nickname, avatarUrl, inviteCode = '' }: UserProfileInput) => {
@@ -140,18 +142,20 @@ export const saveUserProfile = async ({ nickname, avatarUrl, inviteCode = '' }: 
     throw new Error('请选择头像')
   }
 
-  let finalAvatarUrl = avatarUrl
-  if (isTempAvatarPath(avatarUrl)) {
-    finalAvatarUrl = await uploadAvatarToCloud(avatarUrl)
-  }
+  const finalAvatarUrl = await uploadAvatarFile(avatarUrl)
+  const cloudProfile = await saveProfileToCloud({
+    nickname: trimmedNickname,
+    avatarUrl: finalAvatarUrl,
+  })
+
+  // 登录完成前把自己的头像落到本地，首页不再先显示一次兜底头像。
+  await preloadAvatar(finalAvatarUrl)
 
   if (!trimmedInviteCode) {
-    const previousSession = getSession()
     const nextSession: UserSession = {
-      openid: previousSession?.openid || '',
+      openid: cloudProfile.openid,
       sharedSpaceId: '',
       inviteVerified: false,
-      soloMode: true,
       nickname: trimmedNickname,
       avatarUrl: finalAvatarUrl,
       profileCompleted: true,
@@ -167,7 +171,6 @@ export const saveUserProfile = async ({ nickname, avatarUrl, inviteCode = '' }: 
 
   const nextSession: UserSession = {
     ...session,
-    soloMode: false,
     profileCompleted: true,
   }
   saveSession(nextSession)
@@ -178,13 +181,20 @@ export const verifyInviteCode = async (
   code = DEFAULT_INVITE_CODE,
   profile?: Partial<UserProfileInput>,
 ) => {
+  if (!profile?.avatarUrl?.startsWith('cloud://')) {
+    throw new Error('头像资料无效，请重新选择头像')
+  }
+
   const previousSession = getSession()
   const result = await wx.cloud.callFunction({
     name: SHARED_SPACE_CLOUD_FUNCTION,
     data: {
-      code,
-      nickname: profile?.nickname,
-      avatarUrl: profile?.avatarUrl,
+      action: 'joinRoom',
+      payload: {
+        code,
+        nickname: profile?.nickname,
+        avatarUrl: profile?.avatarUrl,
+      },
     },
   })
 
@@ -210,13 +220,13 @@ export const verifyInviteCode = async (
     openid: payload.openid,
     sharedSpaceId: payload.sharedSpaceId,
     inviteVerified: true,
-    soloMode: false,
     nickname: profile?.nickname?.trim() || previousSession?.nickname?.trim() || payload.nickname?.trim() || '我',
-    avatarUrl: profile?.avatarUrl || previousSession?.avatarUrl || payload.avatarUrl || '',
-    profileCompleted: previousSession?.profileCompleted ?? Boolean(profile?.nickname && profile?.avatarUrl),
+    avatarUrl: profile?.avatarUrl || '',
+    profileCompleted: Boolean(profile?.nickname && profile?.avatarUrl),
     partnerOpenid: payload.partner?.openid,
     partnerNickname: payload.partner?.nickname,
     partnerAvatarUrl: payload.partner?.avatarUrl,
+    partnerAvatarSourceUrl: payload.partner?.avatarUrl,
   }
 
   saveSession(session)
@@ -256,20 +266,21 @@ export const tryRestoreSessionFromCloud = async (): Promise<UserSession | null> 
       return null
     }
 
-    const hasSharedSpace = Boolean(payload.sharedSpaceId && payload.inviteVerified !== false)
     const session: UserSession = {
       openid: payload.openid,
       sharedSpaceId: payload.sharedSpaceId || '',
-      inviteVerified: hasSharedSpace,
-      soloMode: !hasSharedSpace,
+      inviteVerified: Boolean(payload.sharedSpaceId && payload.inviteVerified !== false),
       nickname: payload.nickname?.trim() || '我',
       avatarUrl: payload.avatarUrl || '',
       profileCompleted: true,
       partnerOpenid: payload.partner?.openid,
       partnerNickname: payload.partner?.nickname,
       partnerAvatarUrl: payload.partner?.avatarUrl,
+      partnerAvatarSourceUrl: payload.partner?.avatarUrl,
     }
 
+    await preloadAvatar(session.avatarUrl)
+    await preloadAvatar(session.partnerAvatarSourceUrl || '')
     saveSession(session)
     return session
   } catch (error) {

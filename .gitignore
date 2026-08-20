@@ -3,5 +3,9 @@ miniprogram_npm/
 dist/
 .DS_Store
 
+# CloudBase local deployment metadata and generated environment folders
+.cloudbase/*
+!.cloudbase/.gitkeep
+
 # WeChat DevTools local/private settings
 project.private.config.json

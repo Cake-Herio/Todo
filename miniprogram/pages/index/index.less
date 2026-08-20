@@ -262,7 +262,9 @@ page {
 
 .login-sheet-avatar-wrap {
   display: flex;
+  flex-direction: column;
   justify-content: center;
+  align-items: center;
   width: 100%;
 }
 
@@ -275,13 +277,22 @@ page {
   margin: 0;
   padding: 0;
   border: none;
-  background: transparent;
+  border-radius: 50%;
+  background-color: transparent !important;
+  color: transparent;
+  font-size: 0;
   line-height: 1;
-  overflow: visible;
+  overflow: hidden;
+  box-sizing: content-box;
 }
 
 .login-sheet-avatar-btn::after {
   border: none;
+}
+
+.login-sheet-avatar-btn:active {
+  background-color: transparent !important;
+  opacity: 0.86;
 }
 
 .login-sheet-avatar {
@@ -297,8 +308,10 @@ page {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 2rpx dashed rgba(125, 168, 141, 0.55);
+  border: 3rpx solid rgba(125, 168, 141, 0.65);
+  background: #f3f8f4;
   box-sizing: border-box;
+  box-shadow: 0 0 0 8rpx rgba(152, 198, 168, 0.16);
 }
 
 .login-sheet-avatar-icon {
@@ -307,10 +320,12 @@ page {
   line-height: 1;
 }
 
-.login-sheet-avatar-text {
-  margin-top: 8rpx;
+.login-sheet-avatar-label {
+  margin-top: 16rpx;
   color: #7da88d;
-  font-size: 22rpx;
+  font-size: 24rpx;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .login-sheet-field {

@@ -8,7 +8,7 @@ import {
   type OwnerKey,
   type Plan,
 } from '../../utils/data'
-import { refreshWithLocalFirst, bootstrapSharedSpace } from '../../utils/cloud-sync'
+import { bootstrapSharedSpace } from '../../utils/cloud-sync'
 import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, MODAL_EXIT_MS, openModal } from '../../utils/modal-dismiss'
@@ -38,6 +38,15 @@ const COMPLETED_TYPE_FILTER = 'timed' as const
 
 const CALENDAR_HINT = '点击日期快速选择'
 const CALENDAR_VIEW_SWITCH_DURATION_MS = 280
+
+const formatCalendarTag = (tag: string) => {
+  const characters = Array.from(`${tag || ''}`.trim())
+  if (characters.length <= 2) {
+    return characters.join('')
+  }
+
+  return `${characters[0]}…`
+}
 
 const minYear = 1970
 const maxYear = 2100
@@ -140,7 +149,7 @@ const sortCalendarDayPlans = (plans: Plan[], dateText: string) => {
 const mapPlanToCalendarView = (plan: Plan): CalendarPlanView => ({
   id: plan.id,
   avatarUrl: getOwnerAvatarUrl(plan.ownerKey),
-  tag: plan.tag,
+  tag: formatCalendarTag(plan.tag),
   tone: buildPlanTone(plan),
   isCompleted: plan.status === 'completed',
 })
@@ -198,7 +207,7 @@ const buildCompletedCalendarDays = (
     const visiblePlans = dayRecords.slice(0, 3).map((record) => ({
       id: record.id,
       avatarUrl: getOwnerAvatarUrl(record.ownerKey),
-      tag: record.tag,
+      tag: formatCalendarTag(record.tag),
       tone: record.wasOverdue ? 'gray' as const : record.ownerKey === 'partner' ? 'blue' as const : 'green' as const,
       isCompleted: true,
     }))
@@ -218,8 +227,8 @@ const buildCompletedCalendarDays = (
 Component({
   data: {
     safeTopPx: 0,
-    viewMode: 'plan' as CalendarViewMode,
-    swiperCurrent: 0,
+    viewMode: 'completed' as CalendarViewMode,
+    swiperCurrent: 1,
     viewSwitchDuration: CALENDAR_VIEW_SWITCH_DURATION_MS,
     currentYear: new Date().getFullYear(),
     currentMonth: new Date().getMonth(),
@@ -253,18 +262,30 @@ Component({
   pageLifetimes: {
     show() {
       refreshPageFontStyle(this)
-      this.renderCalendarGrid()
 
       const pendingMode = wx.getStorageSync('calendar_view_mode') as CalendarViewMode | ''
+      if (pendingMode === 'completed') {
+        wx.removeStorageSync('calendar_view_mode')
+        this.applyViewMode('completed')
+      }
 
-      refreshWithLocalFirst(() => {
-        if (pendingMode === 'completed') {
-          wx.removeStorageSync('calendar_view_mode')
-          this.applyViewMode('completed')
-        }
-
+      const renderCalendar = () => {
+        const state = getOwnerFilterStateLocal(this.data.activeFilter)
+        this.setData({
+          filters: state.filters,
+          activeFilter: state.activeFilter,
+          singleUserMode: state.singleUserMode,
+        })
         this.renderCalendarGrid()
-      })
+      }
+
+      // 先显示本地内容，云端同步和成员头像解析在后台完成后无条件刷新一次。
+      renderCalendar()
+      void bootstrapSharedSpace()
+        .then(renderCalendar)
+        .catch((error) => {
+          console.warn('[calendar] background sync failed', error)
+        })
     },
   },
   methods: {
@@ -343,7 +364,10 @@ Component({
     },
     async switchOwnerFilter(filter: string) {
       ;(this as WechatMiniprogram.IAnyObject).filterSwitching = true
-      wx.showLoading({ title: '加载中', mask: true })
+      wx.showLoading({
+        title: '切换中',
+        mask: true,
+      })
 
       try {
         this.setData({ activeFilter: filter })
@@ -413,18 +437,30 @@ Component({
     },
     goDay(e: WechatMiniprogram.BaseEvent) {
       const date = e.currentTarget.dataset.date as string
-      const days = this.data.viewMode === 'plan' ? this.data.planDays : this.data.completedDays
+      const viewMode = this.data.viewMode
+      // 日历格子可能在删除记录后仍保留旧的 setData 快照，点击时以最新本地数据重新计算。
+      const days = viewMode === 'plan'
+        ? buildCalendarDays(getPlans(), this.data.activeFilter, this.data.currentYear, this.data.currentMonth, this.data.selectedDate)
+        : buildCompletedCalendarDays(
+            getCompletedRecords(),
+            this.data.activeFilter,
+            this.data.currentYear,
+            this.data.currentMonth,
+            this.data.selectedDate,
+          )
+
+      this.setData(viewMode === 'plan' ? { planDays: days } : { completedDays: days })
       const day = days.find((item) => item.date === date)
 
       if (!day?.hasItems) {
         wx.showToast({
-          title: this.data.viewMode === 'plan' ? '当天暂无计划' : '当天暂无完成记录',
+          title: viewMode === 'plan' ? '当天暂无计划' : '当天暂无完成记录',
           icon: 'none',
         })
         return
       }
 
-      if (this.data.viewMode === 'completed') {
+      if (viewMode === 'completed') {
         wx.navigateTo({
           url: `/pages/completed-day/completed-day?date=${date}&filter=${this.data.activeFilter}`,
         })

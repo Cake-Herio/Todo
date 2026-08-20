@@ -3,7 +3,7 @@
 import { ensureLocalData } from './utils/data'
 import { initCloud, bootstrapSharedSpace } from './utils/cloud-sync'
 import { applyFontOnLaunch } from './utils/font-preference'
-import { isSessionReady, isSoloMode, tryRestoreSessionFromCloud } from './utils/session'
+import { isSessionReady, tryRestoreSessionFromCloud } from './utils/session'
 
 App<IAppOption>({
   globalData: {
@@ -18,12 +18,12 @@ App<IAppOption>({
 
     void this.bootstrapCloudSession()
   },
-  /** 从云端恢复登录态；已通过邀请码或单人模式时再拉取共享空间数据 */
+  /** 从云端恢复登录态；已加入共享空间时再拉取共享数据。 */
   async bootstrapCloudSession() {
     try {
       await tryRestoreSessionFromCloud()
 
-      if (isSessionReady() || isSoloMode()) {
+      if (isSessionReady()) {
         await bootstrapSharedSpace()
         this.globalData.cloudReady = true
       }

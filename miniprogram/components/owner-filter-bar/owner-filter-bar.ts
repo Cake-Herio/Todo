@@ -44,6 +44,12 @@ Component({
         showFilterScrollFadeRight: fades.showRight,
       })
     },
+    onAvatarError(e: WechatMiniprogram.BaseEvent) {
+      console.warn('[avatar] owner filter image failed', {
+        avatarUrl: e.currentTarget.dataset.avatarUrl,
+        detail: e.detail,
+      })
+    },
     updateFilterScrollFades(scrollLeft = 0) {
       wx.nextTick(() => {
         const query = wx.createSelectorQuery().in(this)

@@ -11,7 +11,6 @@ const STORAGE_KEY = 'myforest_font_preference'
 const KAI_FONT_FAMILY = 'LXGW WenKai'
 const FONT_CDN_URL =
   'https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai-Lite@1.501/fonts/TTF/LXGWWenKaiLite-Regular.ttf'
-const LOCAL_FONT_PATH = '/assets/fonts/LXGWWenKaiLite-Regular.ttf'
 
 const FONT_STACKS: Record<FontPreferenceKey, string> = {
   kai: `"${KAI_FONT_FAMILY}", "Kaiti SC", "STKaiti", "KaiTi", "楷体", serif`,
@@ -87,14 +86,9 @@ export const loadKaiFont = () => {
     return kaiFontLoadPromise
   }
 
-  kaiFontLoadPromise = (async () => {
-    const loadedLocal = await loadKaiFontFrom(LOCAL_FONT_PATH)
-    if (loadedLocal) {
-      return true
-    }
-
-    return loadKaiFontFrom(FONT_CDN_URL)
-  })()
+  // The font is not bundled in the mini program, so avoid requesting a missing
+  // local asset before falling back to the system font.
+  kaiFontLoadPromise = loadKaiFontFrom(FONT_CDN_URL)
 
   return kaiFontLoadPromise
 }
@@ -108,11 +102,6 @@ export const refreshAllPagesFontStyle = (key?: FontPreferenceKey) => {
       page.setData({ pageFontStyle: pageStyle })
     }
 
-    const meta = page.selectComponent?.('#font-page-meta') as WechatMiniprogram.Component.TrivialInstance & {
-      refresh?: (style?: string) => void
-    } | null
-
-    meta?.refresh?.(pageStyle)
   })
 }
 

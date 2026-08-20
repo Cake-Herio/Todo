@@ -1,4 +1,4 @@
-<font-page-meta id="font-page-meta" />
+<page-meta page-style="{{pageFontStyle}}" />
 <view class="focus-records-page-shell" style="{{pageFontStyle}}">
   <navigation-bar title="计时记录" color="#2F3A34" background="transparent"></navigation-bar>
 

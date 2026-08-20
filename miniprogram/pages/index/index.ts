@@ -1,4 +1,4 @@
-import { getFallbackAvatarUrl, resolvePartnerAvatarForDisplay, toDisplayAvatarUrl } from '../../utils/avatar-display'
+import { getDefaultAvatarUrl, preloadAvatar } from '../../utils/avatar-display'
 import { addPlan, deletePlansByIds, findTimedScheduleBatchConflictMessage, formatDate, getOwnerAvatarUrl, getPlans, getPlansByDate, getToday, updatePlan, type OwnerKey, type Plan } from '../../utils/data'
 import { refreshWithLocalFirst, bootstrapSharedSpace } from '../../utils/cloud-sync'
 import { getDisplayAvatarUrl, getDisplayNickname, getPartnerDisplayAvatarUrl, getPartnerDisplayNickname, getSession, isProfileComplete, isSharedSpaceMode, saveUserProfile, tryRestoreSessionFromCloud } from '../../utils/session'
@@ -88,6 +88,27 @@ interface UpcomingPreviewPlan {
 
 /** 主页专注状态轮询间隔（自己 + 对方） */
 const FOCUS_PRESENCE_POLL_MS = 60 * 1000
+
+const isDevtools = () => {
+  try {
+    return wx.getSystemInfoSync().platform === 'devtools'
+  } catch {
+    return false
+  }
+}
+
+const getLoginErrorMessage = (error: unknown) => {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+
+  if (error && typeof error === 'object') {
+    const detail = error as { errMsg?: string; message?: string }
+    return detail.errMsg || detail.message || '登录失败，请重试'
+  }
+
+  return '登录失败，请重试'
+}
 
 const buildUpcomingPreview = (plan: Plan, nowMinutes: number): UpcomingPreviewPlan | null => {
   if (!plan.startTime || !plan.endTime) {
@@ -348,6 +369,7 @@ Component({
     isLoginSheetVisible: false,
     isLoginSheetClosing: false,
     loginAvatarUrl: '',
+    loginAvatarPreviewUrl: '',
     loginNickname: '',
     loginInviteCode: '',
     isProfileSaving: false,
@@ -432,7 +454,6 @@ Component({
   lifetimes: {
     attached() {
       void this.bootstrapHomeSession()
-      this.syncHomeChrome()
       this.setupSpeechRecognition()
     },
     detached() {
@@ -456,7 +477,6 @@ Component({
 
       refreshWithLocalFirst(() => {
         this.refreshHomeData()
-        this.syncHomeChrome()
 
         if (isProfileComplete() && !this.data.homeContentVisible) {
           this.revealHomeContent()
@@ -539,7 +559,7 @@ Component({
         singleUserMode: getOwnerFilterStateLocal(this.data.activeFilter || 'all').singleUserMode,
         partnerNickname: getPartnerDisplayNickname(),
         partnerAvatarUrl: getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner'),
-        loginAvatarUrl: this.data.loginAvatarUrl || session?.avatarUrl || '',
+        loginAvatarPreviewUrl: this.data.loginAvatarPreviewUrl || getDisplayAvatarUrl(),
         loginNickname: this.data.loginNickname || (session?.nickname !== '我' ? session?.nickname || '' : ''),
         nextPlans: pickUpcomingPlans(activePlans),
       }
@@ -559,20 +579,9 @@ Component({
       }
 
       this.setData(patch)
-      this.syncHomeChrome()
 
       if (!needProfileLogin) {
         void this.refreshFocusPresence()
-      }
-    },
-    syncHomeChrome() {
-      const show = !this.data.needProfileLogin && this.data.homeContentVisible
-      const hasActiveFocus = Boolean(wx.getStorageSync('myforest_local_focus_session'))
-
-      if (show && !hasActiveFocus) {
-        wx.showTabBar({ animation: true })
-      } else {
-        wx.hideTabBar({ animation: true })
       }
     },
     revealHomeContent() {
@@ -580,7 +589,6 @@ Component({
         homeContentVisible: true,
         homeRevealActive: true,
       }, () => {
-        this.syncHomeChrome()
         setTimeout(() => {
           if (this.data.homeRevealActive) {
             this.setData({ homeRevealActive: false })
@@ -604,7 +612,8 @@ Component({
       ;(this as WechatMiniprogram.IAnyObject)._partnerFocusPollTimer = 0
     },
     async prefetchPartnerAvatar() {
-      const displayUrl = await resolvePartnerAvatarForDisplay()
+      const session = getSession()
+      const displayUrl = await preloadAvatar(session?.partnerAvatarSourceUrl || session?.partnerAvatarUrl || '')
 
       const updates: WechatMiniprogram.Component.DataOption = {}
       if (displayUrl !== this.data.partnerAvatarUrl) {
@@ -626,7 +635,7 @@ Component({
       const state = getOwnerFilterStateLocal('all')
       const session = getSession()
       const partnerAvatarFallback = getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner')
-      const selfAvatarFallback = toDisplayAvatarUrl(session?.avatarUrl || '', getFallbackAvatarUrl('me'))
+      const selfAvatarFallback = getDisplayAvatarUrl() || getDefaultAvatarUrl()
 
       const updates: WechatMiniprogram.Component.DataOption = {}
 
@@ -651,13 +660,14 @@ Component({
         }
       }
 
-      // 云 session 不存在时，检查本地存储（solo 模式 / 云同步延迟兜底）
+      // 共享专注状态尚不可用时，回退到本地保存的进行中计时。
       if (!self) {
         const localRaw = wx.getStorageSync('myforest_local_focus_session') as Record<string, unknown> | ''
         if (localRaw && typeof localRaw === 'object' && localRaw.focusStartedAt) {
+          const localTag = `${localRaw.selectedTag || ''}`.trim()
           self = {
             name: '我',
-            status: localRaw.isPaused ? '暂停' : '专注',
+            status: localRaw.isPaused ? '暂停' : localTag || '专注',
             duration: '进行中',
             avatarUrl: selfAvatarFallback,
             restore: {
@@ -712,17 +722,6 @@ Component({
         this.setData(updates)
       }
 
-      // 有活跃计时则立即隐藏 tabBar；计时结束后延迟抬起，避免闪现
-      if ('selfFocusVisible' in updates) {
-        if (updates.selfFocusVisible) {
-          wx.hideTabBar({ animation: true })
-        } else {
-          setTimeout(() => {
-            wx.showTabBar({ animation: true })
-          }, 320)
-        }
-      }
-
       void this.prefetchPartnerAvatar()
     },
     onHeroGreetingTap() {
@@ -732,7 +731,8 @@ Component({
 
       const session = getSession()
       openModal(this, 'isLoginSheetVisible', 'isLoginSheetClosing', {
-        loginAvatarUrl: session?.avatarUrl || '',
+        loginAvatarUrl: '',
+        loginAvatarPreviewUrl: getDisplayAvatarUrl(),
         loginNickname: session?.nickname && session.nickname !== '我' ? session.nickname : '',
         loginInviteCode: this.data.loginInviteCode || '',
       })
@@ -744,13 +744,38 @@ Component({
 
       dismissModal(this, 'isLoginSheetVisible', 'isLoginSheetClosing')
     },
-    onChooseLoginAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>) {
-      const avatarUrl = e.detail?.avatarUrl
-      if (!avatarUrl) {
+    onLoginAvatarButtonTap() {
+      if (!isDevtools()) {
         return
       }
 
-      this.setData({ loginAvatarUrl: avatarUrl })
+      wx.chooseImage({
+        count: 1,
+        sourceType: ['album', 'camera'],
+        success: (result) => {
+          const filePath = result.tempFilePaths?.[0]
+          if (filePath) {
+            this.setData({
+              loginAvatarUrl: filePath,
+              loginAvatarPreviewUrl: filePath,
+            })
+          }
+        },
+        fail: (error) => {
+          if (!error.errMsg?.includes('cancel')) {
+            wx.showToast({ title: '头像选择失败，请重试', icon: 'none' })
+          }
+        },
+      })
+    },
+    onChooseLoginAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl?: string }>) {
+      const avatarUrl = e.detail?.avatarUrl || ''
+      if (!avatarUrl) {
+        wx.showToast({ title: '没有获取到微信头像，请重试', icon: 'none' })
+        return
+      }
+
+      this.setData({ loginAvatarUrl: avatarUrl, loginAvatarPreviewUrl: avatarUrl })
     },
     onLoginNicknameInput(e: WechatMiniprogram.Input) {
       this.setData({ loginNickname: e.detail.value })
@@ -795,6 +820,8 @@ Component({
             avatarUrl: getDisplayAvatarUrl(),
             heroAvatarExpanded: true,
             heroAvatarAnimate: true,
+            loginAvatarUrl: '',
+            loginAvatarPreviewUrl: getDisplayAvatarUrl(),
             isProfileSaving: false,
           },
           onDismissed: () => {
@@ -806,12 +833,12 @@ Component({
           },
         })
         wx.showToast({
-          title: session.soloMode ? '已进入单人模式' : '欢迎回来',
+          title: '欢迎回来',
           icon: 'success',
         })
       } catch (error) {
         wx.showToast({
-          title: error instanceof Error ? error.message : '登录失败',
+          title: getLoginErrorMessage(error),
           icon: 'none',
         })
         this.setData({ isProfileSaving: false })

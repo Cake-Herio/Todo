@@ -12,7 +12,7 @@ import {
 import { applyTagUpdate } from '../../utils/data'
 import { refreshWithLocalFirst } from '../../utils/cloud-sync'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
-import { isSessionReady, isSoloMode } from '../../utils/session'
+import { isSessionReady } from '../../utils/session'
 
 const toTagViews = (tags: ReturnType<typeof getPlanTagOptions>): PlanTagView[] =>
   tags.map((item) => ({
@@ -38,7 +38,7 @@ Component({
   },
   methods: {
     refreshTags() {
-      if (isSoloMode()) {
+      if (!isSessionReady()) {
         const customTags = getPlanTagOptions().filter((item) => !item.isBuiltin)
         this.setData({
           sharedTags: [],
