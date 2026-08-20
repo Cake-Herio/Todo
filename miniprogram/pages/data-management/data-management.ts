@@ -1,4 +1,4 @@
-import { deleteCompletedRecord, deletePlansByIds } from '../../utils/data'
+import { deletePlansByIds, removeCompletedRecordLocally } from '../../utils/data'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { runDataMaintenance, type MaintenanceItem, type MaintenanceResult } from '../../utils/data-maintenance'
 
@@ -93,7 +93,7 @@ Component({
         deletePlansByIds(items.filter((item) => item.collection === 'plans').map((item) => item.id))
         items
           .filter((item) => item.collection === 'completed_records')
-          .forEach((item) => deleteCompletedRecord(item.id))
+          .forEach((item) => removeCompletedRecordLocally(item.id))
 
         this.setData({
           previewVisible: false,

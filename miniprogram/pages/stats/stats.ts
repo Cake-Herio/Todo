@@ -66,6 +66,8 @@ const RANGE_OPTIONS: StatsRangeOption[] = [
   { key: 'year', label: '每年' },
 ]
 
+const PENDING_STATS_TOAST_KEY = 'myforest_pending_stats_toast'
+
 const formatFocusMinutes = (minutes: number) => {
   if (minutes <= 0) {
     return '0m'
@@ -737,6 +739,14 @@ Component({
   pageLifetimes: {
     show() {
       refreshPageFontStyle(this)
+      const pendingToast = wx.getStorageSync(PENDING_STATS_TOAST_KEY)
+      if (pendingToast === 'recorded') {
+        wx.removeStorageSync(PENDING_STATS_TOAST_KEY)
+        setTimeout(() => {
+          wx.showToast({ title: '已记录', icon: 'success' })
+        }, 80)
+      }
+
       refreshWithLocalFirst(() => {
         void this.refreshOwnerFilters()
       })

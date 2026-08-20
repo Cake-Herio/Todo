@@ -750,6 +750,38 @@ const fetchSharedSpacePayload = async (sharedSpaceId, openid) => {
   }
 }
 
+const updateTagReferences = async (sharedSpaceId, tagId, previousName, nextName) => {
+  if (!previousName || previousName === nextName) {
+    return { plans: 0, records: 0 }
+  }
+
+  const [plansRes, recordsRes] = await Promise.all([
+    db.collection('plans').where({ sharedSpaceId, tagId }).get(),
+    db.collection('completed_records').where({ sharedSpaceId, tagId }).get(),
+  ])
+
+  const planUpdates = (plansRes.data || []).map((plan) => {
+    const data = { tag: nextName }
+    if (plan.title === previousName || plan.title === plan.tag) {
+      data.title = nextName
+    }
+    return db.collection('plans').doc(plan._id).update({ data })
+  })
+  const recordUpdates = (recordsRes.data || []).map((record) => {
+    const data = { tag: nextName }
+    if (record.title === previousName || record.title === record.tag) {
+      data.title = nextName
+    }
+    return db.collection('completed_records').doc(record._id).update({ data })
+  })
+
+  await Promise.all([...planUpdates, ...recordUpdates])
+  return {
+    plans: planUpdates.length,
+    records: recordUpdates.length,
+  }
+}
+
 const upsertPlanTag = async (openid, user, payload = {}) => {
   if (!user?.sharedSpaceId) {
     return { ok: false, message: '未加入共享空间' }
@@ -790,6 +822,7 @@ const upsertPlanTag = async (openid, user, payload = {}) => {
   }
 
   const existingById = await db.collection('plan_tags').where({ sharedSpaceId: user.sharedSpaceId, id: tagId }).limit(1).get()
+  const previousName = existingById.data[0]?.name || ''
   if (existingById.data[0]) {
     const doc = existingById.data[0]
     if (doc.visibility === 'private' && doc.ownerOpenid !== openid) {
@@ -811,7 +844,8 @@ const upsertPlanTag = async (openid, user, payload = {}) => {
     })
   }
 
-  return { ok: true, tag: data }
+  const references = await updateTagReferences(user.sharedSpaceId, tagId, previousName, name)
+  return { ok: true, tag: data, references }
 }
 
 const deletePlanTag = async (openid, user, payload = {}) => {
@@ -863,16 +897,150 @@ const deleteCompletedRecord = async (openid, user, payload = {}) => {
     .get()
 
   const record = result.data[0]
-  const recordOwner = record?.userId || record?._openid
-  if (record && recordOwner !== openid) {
-    return { ok: false, message: '无权删除此记录' }
-  }
-
   if (record?._id) {
     await db.collection('completed_records').doc(record._id).remove()
   }
 
   return { ok: true, removed: Boolean(record) }
+}
+
+const updateCompletedRecord = async (openid, user, payload = {}) => {
+  if (!user?.sharedSpaceId) {
+    return { ok: false, message: '未加入共享空间' }
+  }
+
+  const recordId = `${payload.id || ''}`.trim()
+  if (!recordId) {
+    return { ok: false, message: '缺少记录 id' }
+  }
+
+  const result = await db
+    .collection('completed_records')
+    .where({ sharedSpaceId: user.sharedSpaceId, id: recordId })
+    .limit(1)
+    .get()
+  const record = result.data[0]
+
+  if (!record?._id) {
+    return { ok: false, message: '完成记录不存在' }
+  }
+
+  const data = {}
+  if (payload.tag !== undefined) data.tag = `${payload.tag || ''}`.trim()
+  if (payload.tagId !== undefined) data.tagId = `${payload.tagId || ''}`.trim()
+  if (payload.detail !== undefined) data.detail = `${payload.detail || ''}`.trim()
+
+  if (Object.keys(data).length === 0) {
+    return { ok: false, message: '没有可更新的内容' }
+  }
+
+  await db.collection('completed_records').doc(record._id).update({ data })
+  return { ok: true, id: recordId }
+}
+
+const saveTimedCompletion = async (openid, user, payload = {}) => {
+  if (!user?.sharedSpaceId) {
+    return { ok: false, message: '未加入共享空间' }
+  }
+
+  if (!Array.isArray(payload.records) || payload.records.length === 0) {
+    return { ok: false, message: '缺少完成记录' }
+  }
+
+  const records = []
+  for (const item of payload.records) {
+    const recordId = `${item?.id || ''}`.trim()
+    const tag = `${item?.tag || ''}`.trim()
+
+    if (!recordId) {
+      return { ok: false, message: '缺少记录 id' }
+    }
+
+    if (!tag) {
+      return { ok: false, message: '完成记录必须包含标签' }
+    }
+
+    records.push({
+      id: recordId,
+      planId: `${item?.planId || ''}`.trim() || `focus-${item?.completedAt || Date.now()}`,
+      userId: openid,
+      sharedSpaceId: user.sharedSpaceId,
+      title: `${item?.title || ''}`.trim(),
+      tag,
+      tagId: `${item?.tagId || ''}`.trim(),
+      detail: `${item?.detail || ''}`.trim(),
+      startedAt: Number(item?.startedAt) || Date.now(),
+      completedAt: Number(item?.completedAt) || Date.now(),
+      completionMode: 'timed',
+      actualMinutes: Math.max(1, Number(item?.actualMinutes) || 1),
+      wasOverdue: Boolean(item?.wasOverdue),
+    })
+  }
+
+  for (const data of records) {
+    const existingRes = await db
+      .collection('completed_records')
+      .where({ sharedSpaceId: user.sharedSpaceId, id: data.id })
+      .limit(1)
+      .get()
+    const existing = existingRes.data[0]
+
+    if (existing && existing.userId && existing.userId !== openid) {
+      return { ok: false, message: '无权保存这条完成记录' }
+    }
+
+    if (existing?._id) {
+      await db.collection('completed_records').doc(existing._id).update({ data })
+    } else {
+      await db.collection('completed_records').add({ data })
+    }
+  }
+
+  const linkedPlanId = `${payload.linkedPlanId || ''}`.trim()
+  let planUpdated = false
+  if (linkedPlanId) {
+    const planRes = await db
+      .collection('plans')
+      .where({ sharedSpaceId: user.sharedSpaceId, id: linkedPlanId, userId: openid })
+      .limit(1)
+      .get()
+    const plan = planRes.data[0]
+    if (plan?._id) {
+      await db.collection('plans').doc(plan._id).update({
+        data: { status: 'completed', updatedAt: Math.max(...records.map((item) => item.completedAt)) },
+      })
+      planUpdated = true
+    }
+  }
+
+  return { ok: true, ids: records.map((item) => item.id), planUpdated }
+}
+
+const deletePlan = async (openid, user, payload = {}) => {
+  if (!user?.sharedSpaceId) {
+    return { ok: false, message: '未加入共享空间' }
+  }
+
+  const planId = `${payload.id || ''}`.trim()
+  if (!planId) {
+    return { ok: false, message: '缺少计划 id' }
+  }
+
+  const result = await db
+    .collection('plans')
+    .where({
+      sharedSpaceId: user.sharedSpaceId,
+      id: planId,
+    })
+    .limit(1)
+    .get()
+
+  const plan = result.data[0]
+  if (plan?._id) {
+    await db.collection('plans').doc(plan._id).remove()
+  }
+
+  return { ok: true, removed: Boolean(plan) }
 }
 
 const getMaintenanceOwner = (doc) => doc?.userId || doc?.ownerOpenid || doc?.openid || doc?._openid || ''
@@ -1056,6 +1224,9 @@ exports.main = async (event) => {
     'listFocusSessions',
     'dataMaintenance',
     'deleteCompletedRecord',
+    'updateCompletedRecord',
+    'saveTimedCompletion',
+    'deletePlan',
     'listTags',
     'upsertTag',
     'deleteTag',
@@ -1219,6 +1390,18 @@ exports.main = async (event) => {
 
       if (event.action === 'deleteCompletedRecord') {
         return deleteCompletedRecord(openid, user, event.payload || {})
+      }
+
+      if (event.action === 'updateCompletedRecord') {
+        return updateCompletedRecord(openid, user, event.payload || {})
+      }
+
+      if (event.action === 'saveTimedCompletion') {
+        return saveTimedCompletion(openid, user, event.payload || {})
+      }
+
+      if (event.action === 'deletePlan') {
+        return deletePlan(openid, user, event.payload || {})
       }
 
       if (event.action === 'listTags') {

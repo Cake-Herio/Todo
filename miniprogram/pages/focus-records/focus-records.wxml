@@ -10,7 +10,9 @@
     bindscrolltolower="loadMoreRecords"
   >
     <view class="page focus-records-page">
-      <view class="focus-records-intro muted">仅展示你的专注计时记录</view>
+      <view class="focus-records-intro muted">选择成员查看专注计时记录</view>
+
+      <owner-filter-bar filters="{{filters}}" activeFilter="{{activeFilter}}" bind:change="setFilter" />
 
       <view class="records-view-switch-wrap">
         <view class="records-view-switch">
@@ -143,8 +145,18 @@
       </view>
 
       <view class="edit-record-actions">
-        <button class="edit-record-action edit-record-update" bindtap="confirmEditSheet">更新记录</button>
-        <button class="edit-record-action edit-record-delete" bindtap="deleteEditingRecord">删除这条记录</button>
+        <button
+          class="edit-record-action edit-record-update"
+          loading="{{isUpdatingRecord}}"
+          disabled="{{isUpdatingRecord}}"
+          bindtap="confirmEditSheet"
+        >更新记录</button>
+        <button
+          class="edit-record-action edit-record-delete"
+          loading="{{isDeletingRecord}}"
+          disabled="{{isDeletingRecord}}"
+          bindtap="deleteEditingRecord"
+        >删除这条记录</button>
       </view>
     </view>
   </view>

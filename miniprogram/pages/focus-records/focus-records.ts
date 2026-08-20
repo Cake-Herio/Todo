@@ -1,17 +1,23 @@
 import {
-  deleteCompletedRecord,
   formatFocusMinutes,
   formatRecordDateLabel,
   formatTimedRecordTimeRange,
-  getMyTimedRecords,
-  getMyTimedRecordsSummary,
+  getTimedRecords,
+  getTimedRecordsSummary,
   getToday,
-  updateCompletedRecord,
+  removeCompletedRecordLocally,
+  type OwnerKey,
   type CompletedRecord,
+  updateCompletedRecordLocally,
 } from '../../utils/data'
-import { refreshWithLocalFirst } from '../../utils/cloud-sync'
+import {
+  deleteCompletedRecordOnCloud,
+  refreshWithLocalFirst,
+  updateCompletedRecordOnCloud,
+} from '../../utils/cloud-sync'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
+import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
 import {
   buildDayOptions,
   clampPickerYear,
@@ -100,6 +106,8 @@ const buildEmptyText = (showAll: boolean, selectedDate: string) => {
 
 Component({
   data: {
+    filters: getOwnerFilterStateLocal('me').filters,
+    activeFilter: getOwnerFilterStateLocal('me').activeFilter,
     showAll: false,
     selectedDate: getToday(),
     dateTitle: formatDateTitle(getToday()),
@@ -114,6 +122,8 @@ Component({
     isPickerSheetClosing: false,
     isEditSheetVisible: false,
     isEditSheetClosing: false,
+    isDeletingRecord: false,
+    isUpdatingRecord: false,
     editingRecordId: '',
     editingTag: '',
     editingTagId: '',
@@ -131,22 +141,29 @@ Component({
   lifetimes: {
     attached() {
       this.reloadRecords(true)
+      void this.refreshOwnerFilters()
     },
   },
   pageLifetimes: {
     show() {
       refreshPageFontStyle(this)
+      const localFilterState = getOwnerFilterStateLocal(this.data.activeFilter)
+      this.setData({
+        filters: localFilterState.filters,
+        activeFilter: localFilterState.activeFilter,
+      })
       refreshWithLocalFirst(() => {
         this.reloadRecords(true)
       })
+      void this.refreshOwnerFilters()
     },
   },
   methods: {
     reloadRecords(resetPage = false) {
-      const { showAll, selectedDate } = this.data
+      const { showAll, selectedDate, activeFilter } = this.data
       const filterDate = showAll ? null : selectedDate
-      const allRecords = getMyTimedRecords(filterDate)
-      const summary = getMyTimedRecordsSummary(filterDate)
+      const allRecords = getTimedRecords(activeFilter as OwnerKey, filterDate)
+      const summary = getTimedRecordsSummary(activeFilter as OwnerKey, filterDate)
       const visibleCount = resetPage
         ? PAGE_SIZE
         : Math.min(allRecords.length, this.data.records.length + PAGE_SIZE)
@@ -163,6 +180,35 @@ Component({
         hasMore,
         loadMoreText: hasMore ? '上拉加载更多' : allRecords.length > 0 ? '没有更多了' : '',
       })
+    },
+    async refreshOwnerFilters() {
+      const requestedFilter = this.data.activeFilter
+      const state = await getOwnerFilterState(requestedFilter)
+
+      if (this.data.activeFilter !== requestedFilter) {
+        return
+      }
+
+      this.setData({
+        filters: state.filters,
+        activeFilter: state.activeFilter,
+      })
+
+      if (state.activeFilter !== requestedFilter) {
+        this.reloadRecords(true)
+      }
+    },
+    setFilter(e: WechatMiniprogram.CustomEvent<{ filter?: string }> | WechatMiniprogram.BaseEvent) {
+      const filter =
+        (e as WechatMiniprogram.CustomEvent<{ filter?: string }>).detail?.filter ||
+        (e.currentTarget?.dataset?.filter as string | undefined)
+
+      if (!filter || filter === this.data.activeFilter) {
+        return
+      }
+
+      this.setData({ activeFilter: filter })
+      this.reloadRecords(true)
     },
     showAllRecords() {
       if (this.data.showAll) {
@@ -326,16 +372,35 @@ Component({
     onEditDetailInput(e: WechatMiniprogram.Input) {
       this.setData({ editingDetail: e.detail.value })
     },
-    confirmEditSheet() {
+    async confirmEditSheet() {
       const { editingRecordId, editingTag, editingTagId, editingDetail } = this.data
       const option = getPlanTagOptions().find((item) => item.name === editingTag)
       const newTagId = option?.id || editingTagId
 
-      const ok = updateCompletedRecord(editingRecordId, {
+      if (!editingRecordId || !editingTag || !newTagId) {
+        wx.showToast({ title: '请选择标签', icon: 'none' })
+        return
+      }
+
+      const patch = {
         tag: editingTag,
         tagId: newTagId,
         detail: editingDetail.trim(),
-      })
+      }
+
+      this.setData({ isUpdatingRecord: true })
+      try {
+        await updateCompletedRecordOnCloud(editingRecordId, patch)
+      } catch (error) {
+        this.setData({ isUpdatingRecord: false })
+        wx.showToast({
+          title: error instanceof Error ? error.message : '云端更新失败，请稍后重试',
+          icon: 'none',
+        })
+        return
+      }
+
+      const ok = updateCompletedRecordLocally(editingRecordId, patch)
 
       dismissModal(this, 'isEditSheetVisible', 'isEditSheetClosing', {
         extraData: {
@@ -348,8 +413,10 @@ Component({
           showEditTagFadeRight: false,
         },
         onDismissed: () => {
+          this.setData({ isUpdatingRecord: false })
           if (ok) {
             this.reloadRecords(true)
+            wx.showToast({ title: '已更新', icon: 'success' })
           }
         },
       })
@@ -360,10 +427,24 @@ Component({
         content: '删除后这条专注记录将被移除，无法恢复。',
         confirmText: '删除',
         confirmColor: '#D96565',
-        success: (res) => {
+        success: async (res) => {
           if (!res.confirm) return
 
-          const ok = deleteCompletedRecord(this.data.editingRecordId)
+          const recordId = this.data.editingRecordId
+          this.setData({ isDeletingRecord: true })
+
+          try {
+            await deleteCompletedRecordOnCloud(recordId)
+          } catch (error) {
+            this.setData({ isDeletingRecord: false })
+            wx.showToast({
+              title: error instanceof Error ? error.message : '云端删除失败，请稍后重试',
+              icon: 'none',
+            })
+            return
+          }
+
+          const ok = removeCompletedRecordLocally(recordId)
 
           dismissModal(this, 'isEditSheetVisible', 'isEditSheetClosing', {
             extraData: {
@@ -376,6 +457,7 @@ Component({
               showEditTagFadeRight: false,
             },
             onDismissed: () => {
+              this.setData({ isDeletingRecord: false })
               if (ok) {
                 this.reloadRecords(true)
                 wx.showToast({ title: '已删除', icon: 'none' })

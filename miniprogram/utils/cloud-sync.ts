@@ -1,4 +1,4 @@
-import { registerCloudMutateHandler } from './cloud-bridge'
+import { registerCloudMutateHandler, type CloudMutation } from './cloud-bridge'
 import { getCloudEnvId, isCloudEnabled, SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 import {
   clearCompletedRecordDeletion,
@@ -8,16 +8,24 @@ import {
   type CompletedRecord,
   type OwnerKey,
   type Plan,
+  type TimedCompletionDraft,
 } from './data'
 import { refreshSpaceMembersFromCloud } from './owner-filters'
 import { saveCachedCloudTags, syncPlanTagsFromCloud } from './plan-tags'
 import { getSession, isSessionReady, type UserSession, getPartnerDisplayNickname } from './session'
 
 const BOOTSTRAP_KEY = 'myforest_cloud_bootstrapped'
+const PENDING_MUTATIONS_KEY = 'myforest_cloud_pending_mutations_v1'
 const SYNC_DEBOUNCE_MS = 800
 
 export const resetCloudBootstrap = () => {
   wx.removeStorageSync(BOOTSTRAP_KEY)
+  wx.removeStorageSync(PENDING_MUTATIONS_KEY)
+
+  if (pushTimer) {
+    clearTimeout(pushTimer)
+    pushTimer = null
+  }
 }
 
 let syncPromise: Promise<boolean> | null = null
@@ -59,6 +67,84 @@ interface SharedCloudPayload {
 }
 
 const getDb = () => wx.cloud.database()
+
+interface PendingCloudMutations {
+  planIds: string[]
+  completedRecordIds: string[]
+  deletedPlanIds: string[]
+  deletedCompletedRecordIds: string[]
+}
+
+const emptyPendingMutations = (): PendingCloudMutations => ({
+  planIds: [],
+  completedRecordIds: [],
+  deletedPlanIds: [],
+  deletedCompletedRecordIds: [],
+})
+
+const getPendingMutations = (): PendingCloudMutations => {
+  const stored = wx.getStorageSync(PENDING_MUTATIONS_KEY) as Partial<PendingCloudMutations> | ''
+  const pending = emptyPendingMutations()
+
+  if (stored) {
+    ;(['planIds', 'completedRecordIds', 'deletedPlanIds', 'deletedCompletedRecordIds'] as const).forEach((key) => {
+      const values = stored[key]
+      if (Array.isArray(values)) {
+        pending[key] = Array.from(new Set(values.filter((id): id is string => typeof id === 'string' && Boolean(id))))
+      }
+    })
+  }
+
+  getDeletedCompletedRecordIds().forEach((id) => {
+    if (!pending.deletedCompletedRecordIds.includes(id)) {
+      pending.deletedCompletedRecordIds.push(id)
+    }
+  })
+
+  return pending
+}
+
+const hasPendingMutations = (pending: PendingCloudMutations) =>
+  Object.values(pending).some((ids) => ids.length > 0)
+
+const savePendingMutations = (pending: PendingCloudMutations) => {
+  wx.setStorageSync(PENDING_MUTATIONS_KEY, pending)
+}
+
+const mergePendingMutations = (mutation: CloudMutation = {}) => {
+  const pending = getPendingMutations()
+  const add = (key: keyof PendingCloudMutations, values?: string[]) => {
+    if (!values?.length) {
+      return
+    }
+
+    pending[key] = Array.from(new Set([...pending[key], ...values.filter(Boolean)]))
+  }
+
+  add('planIds', mutation.planIds)
+  add('completedRecordIds', mutation.completedRecordIds)
+  add('deletedPlanIds', mutation.deletedPlanIds)
+  add('deletedCompletedRecordIds', mutation.deletedCompletedRecordIds)
+
+  pending.planIds = pending.planIds.filter((id) => !pending.deletedPlanIds.includes(id))
+  pending.completedRecordIds = pending.completedRecordIds.filter(
+    (id) => !pending.deletedCompletedRecordIds.includes(id),
+  )
+  savePendingMutations(pending)
+}
+
+const subtractPendingMutations = (source: PendingCloudMutations, completed: PendingCloudMutations) => {
+  const next = emptyPendingMutations()
+  ;(['planIds', 'completedRecordIds', 'deletedPlanIds', 'deletedCompletedRecordIds'] as const).forEach((key) => {
+    next[key] = source[key].filter((id) => !completed[key].includes(id))
+  })
+  savePendingMutations(next)
+}
+
+// 保留旧函数名，兼容开发者工具可能尚未清理的热重载代码；实际结果仍以云端为准。
+const mergeByUpdatedAt = <T extends { id: string }>(_localItems: T[], cloudItems: T[]) => cloudItems
+
+const mergeRecordsByCompletedAt = (_localItems: CompletedRecord[], cloudItems: CompletedRecord[]) => cloudItems
 
 const resolveOwnerKey = (userId: string, session: UserSession): OwnerKey =>
   userId === session.openid ? 'me' : 'partner'
@@ -236,55 +322,108 @@ const upsertCloudDoc = async (collectionName: string, sharedSpaceId: string, id:
   await db.collection(collectionName).add({ data })
 }
 
-const pushLocalDataToCloud = async (session: UserSession) => {
+const deleteCloudCompletedRecord = async (recordId: string) => {
+  const result = await wx.cloud.callFunction({
+    name: SHARED_SPACE_CLOUD_FUNCTION,
+    data: {
+      action: 'deleteCompletedRecord',
+      payload: { id: recordId },
+    },
+  })
+  const payload = result.result as { ok?: boolean }
+  if (!payload?.ok) {
+    throw new Error('云端删除完成记录失败')
+  }
+}
+
+export const deleteCompletedRecordOnCloud = async (recordId: string) => {
+  await deleteCloudCompletedRecord(recordId)
+}
+
+export const updateCompletedRecordOnCloud = async (
+  recordId: string,
+  patch: { tag?: string; tagId?: string; detail?: string },
+) => {
+  const result = await wx.cloud.callFunction({
+    name: SHARED_SPACE_CLOUD_FUNCTION,
+    data: {
+      action: 'updateCompletedRecord',
+      payload: { id: recordId, ...patch },
+    },
+  })
+  const payload = result.result as { ok?: boolean; message?: string }
+  if (!payload?.ok) {
+    throw new Error(payload?.message || '云端更新完成记录失败')
+  }
+}
+
+export const saveTimedCompletionOnCloud = async (draft: TimedCompletionDraft) => {
+  const session = getSession()
+  if (!session?.sharedSpaceId) {
+    throw new Error('当前未连接共享云端，无法保存计时记录')
+  }
+
+  const cloudRecords = draft.records.map((record) => recordToCloudDoc(record, session))
+  const result = await wx.cloud.callFunction({
+    name: SHARED_SPACE_CLOUD_FUNCTION,
+    data: {
+      action: 'saveTimedCompletion',
+      payload: {
+        records: cloudRecords,
+        linkedPlanId: draft.linkedPlanId || '',
+      },
+    },
+  })
+  const payload = result.result as { ok?: boolean; message?: string }
+  if (!payload?.ok) {
+    throw new Error(payload?.message || '云端保存计时记录失败')
+  }
+}
+
+const deleteCloudPlan = async (planId: string) => {
+  const result = await wx.cloud.callFunction({
+    name: SHARED_SPACE_CLOUD_FUNCTION,
+    data: {
+      action: 'deletePlan',
+      payload: { id: planId },
+    },
+  })
+  const payload = result.result as { ok?: boolean }
+  if (!payload?.ok) {
+    throw new Error('云端删除计划失败')
+  }
+}
+
+const pushLocalDataToCloud = async (session: UserSession, pending: PendingCloudMutations) => {
   const local = getLocalData()
-  const db = getDb()
-
-  const [cloudPlans, cloudRecords] = await Promise.all([
-    fetchCloudCollection<CloudPlanDoc>('plans', session.sharedSpaceId),
-    fetchCloudCollection<CloudRecordDoc>('completed_records', session.sharedSpaceId),
-  ])
-
-  const localPlanIds = new Set(local.plans.map((plan) => plan.id))
-  const localRecordIds = new Set(local.completedRecords.map((record) => record.id))
-  const pendingDeletedRecordIds = getDeletedCompletedRecordIds()
-
-  await Promise.all(
-    pendingDeletedRecordIds.map(async (recordId) => {
-      try {
-        const result = await wx.cloud.callFunction({
-          name: SHARED_SPACE_CLOUD_FUNCTION,
-          data: {
-            action: 'deleteCompletedRecord',
-            payload: { id: recordId },
-          },
-        })
-        const payload = result.result as { ok?: boolean }
-        if (!payload?.ok) {
-          throw new Error('云端删除完成记录失败')
-        }
-        clearCompletedRecordDeletion(recordId)
-      } catch (error) {
-        console.warn('[cloud] delete completed record failed', { recordId, error })
-      }
-    }),
-  )
+  const localPlans = new Map(local.plans.map((plan) => [plan.id, plan]))
+  const localRecords = new Map(local.completedRecords.map((record) => [record.id, record]))
+  const sharedSpaceId = session.sharedSpaceId!
 
   await Promise.all([
-    ...local.plans.map((plan) =>
-      upsertCloudDoc('plans', session.sharedSpaceId, plan.id, planToCloudDoc(plan, session) as unknown as Record<string, unknown>),
-    ),
-    ...local.completedRecords.map((record) =>
-      upsertCloudDoc('completed_records', session.sharedSpaceId, record.id, recordToCloudDoc(record, session) as unknown as Record<string, unknown>),
-    ),
-    ...cloudPlans
-      .filter((plan) => plan._id && !localPlanIds.has(plan.id))
-      .map((plan) => db.collection('plans').doc(plan._id!).remove()),
-    ...cloudRecords
-      .filter((record) => record._id && !localRecordIds.has(record.id))
-      .map((record) => db.collection('completed_records').doc(record._id!).remove()),
+    ...pending.planIds
+      .map((id) => localPlans.get(id))
+      .filter((plan): plan is Plan => Boolean(plan))
+      .map((plan) =>
+        upsertCloudDoc('plans', sharedSpaceId, plan.id, planToCloudDoc(plan, session) as unknown as Record<string, unknown>),
+      ),
+    ...pending.completedRecordIds
+      .map((id) => localRecords.get(id))
+      .filter((record): record is CompletedRecord => Boolean(record))
+      .map((record) =>
+        upsertCloudDoc(
+          'completed_records',
+          sharedSpaceId,
+          record.id,
+          recordToCloudDoc(record, session) as unknown as Record<string, unknown>,
+        ),
+      ),
+    ...pending.deletedPlanIds.map((id) => deleteCloudPlan(id)),
+    ...pending.deletedCompletedRecordIds.map((id) => deleteCloudCompletedRecord(id)),
   ])
 
+  pending.deletedCompletedRecordIds.forEach((id) => clearCompletedRecordDeletion(id))
+  subtractPendingMutations(getPendingMutations(), pending)
   wx.setStorageSync(BOOTSTRAP_KEY, true)
 }
 
@@ -293,45 +432,9 @@ export const initCloudSync = () => {
     return
   }
 
-  registerCloudMutateHandler(() => {
-    scheduleCloudPush()
+  registerCloudMutateHandler((mutation) => {
+    scheduleCloudPush(mutation)
   })
-}
-
-const mergeByUpdatedAt = <T extends { id: string; updatedAt: number }>(localItems: T[], cloudItems: T[]): T[] => {
-  const merged = new Map<string, T>()
-
-  cloudItems.forEach((item) => {
-    merged.set(item.id, item)
-  })
-
-  localItems.forEach((localItem) => {
-    const cloudItem = merged.get(localItem.id)
-
-    if (!cloudItem || localItem.updatedAt >= cloudItem.updatedAt) {
-      merged.set(localItem.id, localItem)
-    }
-  })
-
-  return Array.from(merged.values()).sort((a, b) => b.updatedAt - a.updatedAt)
-}
-
-const mergeRecordsByCompletedAt = (localItems: CompletedRecord[], cloudItems: CompletedRecord[]): CompletedRecord[] => {
-  const merged = new Map<string, CompletedRecord>()
-
-  cloudItems.forEach((item) => {
-    merged.set(item.id, item)
-  })
-
-  localItems.forEach((localItem) => {
-    const cloudItem = merged.get(localItem.id)
-
-    if (!cloudItem || localItem.completedAt >= cloudItem.completedAt) {
-      merged.set(localItem.id, localItem)
-    }
-  })
-
-  return Array.from(merged.values()).sort((a, b) => b.completedAt - a.completedAt)
 }
 
 export const flushCloudPush = async (): Promise<void> => {
@@ -343,7 +446,9 @@ export const flushCloudPush = async (): Promise<void> => {
   await pushLocalDataToCloudNow()
 }
 
-export const scheduleCloudPush = () => {
+export const scheduleCloudPush = (mutation?: CloudMutation) => {
+  mergePendingMutations(mutation)
+
   if (!isSessionReady()) {
     return
   }
@@ -368,9 +473,14 @@ const pushLocalDataToCloudNow = async () => {
     return
   }
 
+  const pending = getPendingMutations()
+  if (!hasPendingMutations(pending)) {
+    return
+  }
+
   pushPromise = (async () => {
     try {
-      await pushLocalDataToCloud(session)
+      await pushLocalDataToCloud(session, pending)
     } catch (error) {
       console.warn('[cloud] push failed', error)
     } finally {
@@ -445,18 +555,14 @@ export const syncFromCloud = async (): Promise<boolean> => {
       }
 
       const local = getLocalData()
-      const bootstrapped = wx.getStorageSync(BOOTSTRAP_KEY) as boolean
-
-      if (cloudPlanDocs.length === 0 && cloudRecordDocs.length === 0 && !bootstrapped && (local.plans.length > 0 || local.completedRecords.length > 0)) {
-        await pushLocalDataToCloud(session)
-        return false
-      }
 
       const cloudPlans = cloudPlanDocs.map((doc) => cloudPlanToPlan(doc, session))
       const deletedRecordIds = new Set(getDeletedCompletedRecordIds())
       const cloudRecords = cloudRecordDocs
         .filter((doc) => !deletedRecordIds.has(doc.id))
         .map((doc) => cloudRecordToRecord(doc, session))
+      // 云端是唯一事实来源。只有发生本地明确变更时才会在 fetch 前 flush，
+      // 普通刷新不能用本地旧缓存补回云端已删除或已修改的数据。
       const plans = mergeByUpdatedAt(local.plans, cloudPlans)
       const completedRecords = mergeRecordsByCompletedAt(local.completedRecords, cloudRecords)
 
@@ -468,6 +574,7 @@ export const syncFromCloud = async (): Promise<boolean> => {
         saveLocalData({ plans, completedRecords })
       }
 
+      wx.setStorageSync(BOOTSTRAP_KEY, true)
       return changed
     } catch (error) {
       console.warn('[cloud] sync failed', error)

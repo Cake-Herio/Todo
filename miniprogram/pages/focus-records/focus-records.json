@@ -5,6 +5,7 @@
   "usingComponents": {
     "font-page-meta": "/components/font-page-meta/font-page-meta",
     "navigation-bar": "/components/navigation-bar/navigation-bar",
-    "plan-tag-pill": "/components/plan-tag-pill/plan-tag-pill"
+    "plan-tag-pill": "/components/plan-tag-pill/plan-tag-pill",
+    "owner-filter-bar": "/components/owner-filter-bar/owner-filter-bar"
   }
 }

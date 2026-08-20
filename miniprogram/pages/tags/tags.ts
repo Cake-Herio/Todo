@@ -107,7 +107,8 @@ Component({
           }
 
           if (result.name) {
-            applyTagUpdate(id, { name: result.name })
+            // 云函数已经同步更新相关计划和完成记录，这里只落地本地缓存。
+            applyTagUpdate(id, { name: result.name }, { syncCloud: false })
           }
 
           await syncPlanTagsFromCloud()

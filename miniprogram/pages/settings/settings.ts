@@ -41,13 +41,14 @@ const buildSettingsItems = (fontPreference: FontPreferenceKey, roomTotalCount = 
     label: '加入共享空间',
     desc: roomTotalCount > 0 ? `已加入 ${roomTotalCount} 个房间` : '新建或加入房间，与伙伴共享计划',
   },
-  { label: '从云拉取到本地', desc: '手动触发后台同步' },
+  
   { label: '标签管理', desc: '自定义计划标签' },
   { label: '计时记录', desc: todayTimedCount > 0 ? `今天 ${todayTimedCount} 条` : '查看专注计时历史' },
-  { label: '灵动岛', desc: getActivitySmithStatusLabel() },
+  // { label: '灵动岛', desc: getActivitySmithStatusLabel() },
   { label: 'Bark 推送', desc: getBarkStatusLabel() },
   { label: '字体', desc: getFontPreferenceLabel(fontPreference) },
   { label: '数据处理', desc: '预览并清理当前房间中的测试数据' },
+  { label: '数据同步', desc: '强触云同步' },
   // { label: '关于 MyForest', desc: '本地优先，云备份同步' },
 ]
 }
@@ -671,7 +672,7 @@ Component({
         return
       }
 
-      if (label === '从云拉取到本地') {
+      if (label === '数据同步') {
         await this.syncCloudData()
         return
       }

@@ -182,7 +182,12 @@
 
             <view class="finish-actions">
               <button class="finish-button secondary-button" bindtap="closeFinishPanel">放弃记录</button>
-              <button class="finish-button primary-button" bindtap="saveCompletion">保存记录</button>
+              <button
+                class="finish-button primary-button"
+                loading="{{isSavingCompletion}}"
+                disabled="{{isSavingCompletion}}"
+                bindtap="saveCompletion"
+              >保存记录</button>
             </view>
           </view>
         </view>

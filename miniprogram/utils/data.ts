@@ -1,4 +1,4 @@
-import { notifyCloudMutate } from './cloud-bridge'
+import { notifyCloudMutate, type CloudMutation } from './cloud-bridge'
 import { resolveTagBindingFromList } from './tag-binding'
 import { getSession } from './session'
 import { getAvatarDisplayUrl, getDefaultAvatarUrl } from './avatar-display'
@@ -102,8 +102,8 @@ export const ensureLocalData = () => {
   }
 }
 
-const notifyCloudDataChanged = () => {
-  notifyCloudMutate()
+const notifyCloudDataChanged = (mutation?: CloudMutation) => {
+  notifyCloudMutate(mutation)
 }
 
 export const getLocalData = (): AppData => {
@@ -159,13 +159,19 @@ const backfillTagIdsInData = (data: AppData) => {
   }
 }
 
-export const applyTagUpdate = (tagId: string, update: { name?: string }) => {
+export const applyTagUpdate = (
+  tagId: string,
+  update: { name?: string },
+  options: { syncCloud?: boolean } = {},
+) => {
   if (!update.name) {
     return
   }
 
   const data = getLocalData()
   let changed = false
+  const changedPlanIds: string[] = []
+  const changedCompletedRecordIds: string[] = []
   const nextName = update.name
 
   const plans = data.plans.map((plan) => {
@@ -174,6 +180,7 @@ export const applyTagUpdate = (tagId: string, update: { name?: string }) => {
     }
 
     changed = true
+    changedPlanIds.push(plan.id)
     const title = plan.title === plan.tag ? nextName : plan.title
 
     return {
@@ -190,6 +197,7 @@ export const applyTagUpdate = (tagId: string, update: { name?: string }) => {
     }
 
     changed = true
+    changedCompletedRecordIds.push(record.id)
     const title = record.title === record.tag ? nextName : record.title
 
     return {
@@ -208,7 +216,12 @@ export const applyTagUpdate = (tagId: string, update: { name?: string }) => {
     plans,
     completedRecords,
   })
-  notifyCloudDataChanged()
+  if (options.syncCloud !== false) {
+    notifyCloudDataChanged({
+      planIds: changedPlanIds,
+      completedRecordIds: changedCompletedRecordIds,
+    })
+  }
 }
 
 export const getPlans = () => getLocalData().plans
@@ -443,7 +456,7 @@ export const addPlan = (input: {
     plans: [plan, ...data.plans],
   })
 
-  notifyCloudDataChanged()
+  notifyCloudDataChanged({ planIds: [plan.id] })
 
   return { ok: true, plan }
 }
@@ -523,7 +536,7 @@ export const updatePlan = (
     plans: data.plans.map((item) => (item.id === planId ? plan : item)),
   })
 
-  notifyCloudDataChanged()
+  notifyCloudDataChanged({ planIds: [planId] })
 
   return { ok: true, plan }
 }
@@ -553,7 +566,9 @@ export const deletePlansByIds = (planIds: string[]) => {
     plans: nextPlans,
   })
 
-  notifyCloudDataChanged()
+  notifyCloudDataChanged({
+    deletedPlanIds: uniqueIds,
+  })
 
   return removedCount
 }
@@ -575,10 +590,10 @@ export const completePlan = (planId: string) => {
     ),
   })
 
-  notifyCloudDataChanged()
+  notifyCloudDataChanged({ planIds: [planId] })
 }
 
-export const saveTimedCompletion = (input: {
+export interface TimedCompletionInput {
   tag: string
   tagId?: string
   detail?: string
@@ -587,7 +602,54 @@ export const saveTimedCompletion = (input: {
   completedAt?: number
   planId?: string
   ownerKey?: OwnerKey
-}) => {
+}
+
+export interface TimedCompletionDraft {
+  records: CompletedRecord[]
+  linkedPlanId?: string
+}
+
+interface TimedCompletionSegment {
+  startedAt: number
+  completedAt: number
+  actualMinutes: number
+}
+
+const splitTimedCompletionSegments = (
+  startedAt: number,
+  completedAt: number,
+  totalMinutes: number,
+): TimedCompletionSegment[] => {
+  if (completedAt <= startedAt || new Date(startedAt).toDateString() === new Date(completedAt).toDateString()) {
+    return [{ startedAt, completedAt, actualMinutes: Math.max(1, totalMinutes) }]
+  }
+
+  const segments: Array<{ startedAt: number; completedAt: number; durationMs: number }> = []
+  let segmentStart = startedAt
+
+  while (segmentStart < completedAt) {
+    const nextDay = new Date(segmentStart)
+    nextDay.setHours(24, 0, 0, 0)
+    const boundary = nextDay.getTime()
+    const segmentEnd = Math.min(boundary, completedAt)
+    const recordCompletedAt = segmentEnd === boundary ? boundary - 1 : segmentEnd
+
+    segments.push({
+      startedAt: segmentStart,
+      completedAt: recordCompletedAt,
+      durationMs: Math.max(1, segmentEnd - segmentStart),
+    })
+    segmentStart = segmentEnd
+  }
+
+  return segments.map((segment) => ({
+    startedAt: segment.startedAt,
+    completedAt: segment.completedAt,
+    actualMinutes: Math.max(1, Math.ceil(segment.durationMs / 60000)),
+  }))
+}
+
+export const buildTimedCompletion = (input: TimedCompletionInput): TimedCompletionDraft => {
   const data = getLocalData()
   const completedAt = input.completedAt ?? Date.now()
   const linkedPlan = input.planId ? data.plans.find((plan) => plan.id === input.planId) : null
@@ -598,36 +660,50 @@ export const saveTimedCompletion = (input: {
   const title = linkedPlan?.title || tag
   const detail = input.detail?.trim() || linkedPlan?.remark || title
 
-  const record: CompletedRecord = {
-    id: `record-${completedAt}`,
+  const segments = splitTimedCompletionSegments(input.startedAt, completedAt, input.actualMinutes)
+  const records = segments.map((segment, index) => ({
+    id: `record-${completedAt}${segments.length > 1 ? `-${index + 1}` : ''}`,
     planId,
     ownerKey,
     title,
     tag,
     tagId: tagBinding.tagId,
     detail,
-    startedAt: input.startedAt,
-    completedAt,
-    completionMode: 'timed',
-    actualMinutes: input.actualMinutes,
+    startedAt: segment.startedAt,
+    completedAt: segment.completedAt,
+    completionMode: 'timed' as const,
+    actualMinutes: segment.actualMinutes,
     wasOverdue: linkedPlan?.status === 'overdue',
+  }))
+
+  return {
+    records,
+    linkedPlanId: linkedPlan?.id,
   }
+}
+
+/** 云端完成计时成功后使用，不会再次触发异步云同步。 */
+export const saveTimedCompletionLocally = (draft: TimedCompletionDraft): CompletedRecord[] => {
+  const data = getLocalData()
+  const latestCompletedAt = Math.max(...draft.records.map((record) => record.completedAt))
+  const linkedPlan = draft.linkedPlanId
+    ? data.plans.find((plan) => plan.id === draft.linkedPlanId)
+    : null
+  const recordIds = new Set(draft.records.map((record) => record.id))
 
   saveLocalData({
     ...data,
     plans: linkedPlan
       ? data.plans.map((plan) =>
-          plan.id === linkedPlan.id
-            ? { ...plan, status: 'completed', updatedAt: completedAt }
+          plan.id === draft.linkedPlanId
+            ? { ...plan, status: 'completed', updatedAt: latestCompletedAt }
             : plan,
-        )
+      )
       : data.plans,
-    completedRecords: [record, ...data.completedRecords],
+    completedRecords: [...draft.records, ...data.completedRecords.filter((item) => !recordIds.has(item.id))],
   })
 
-  notifyCloudDataChanged()
-
-  return record
+  return draft.records
 }
 
 export const formatFocusMinutes = (minutes: number) => {
@@ -685,9 +761,9 @@ export const formatTimedRecordTimeRange = (record: CompletedRecord) => {
   return `${startLabel} - ${endLabel}`
 }
 
-export const getMyTimedRecords = (date?: string | null) => {
+export const getTimedRecords = (ownerFilter: OwnerKey = 'me', date?: string | null) => {
   let records = getCompletedRecords().filter(
-    (record) => record.completionMode === 'timed' && record.ownerKey === 'me',
+    (record) => record.completionMode === 'timed' && record.ownerKey === ownerFilter,
   )
 
   if (date) {
@@ -697,8 +773,10 @@ export const getMyTimedRecords = (date?: string | null) => {
   return records.sort((a, b) => b.completedAt - a.completedAt)
 }
 
-export const getMyTimedRecordsSummary = (date?: string | null) => {
-  const records = getMyTimedRecords(date)
+export const getMyTimedRecords = (date?: string | null) => getTimedRecords('me', date)
+
+export const getTimedRecordsSummary = (ownerFilter: OwnerKey = 'me', date?: string | null) => {
+  const records = getTimedRecords(ownerFilter, date)
   const totalMinutes = records.reduce((total, record) => total + (record.actualMinutes || 0), 0)
 
   return {
@@ -708,6 +786,8 @@ export const getMyTimedRecordsSummary = (date?: string | null) => {
   }
 }
 
+export const getMyTimedRecordsSummary = (date?: string | null) => getTimedRecordsSummary('me', date)
+
 export const updateCompletedRecord = (
   id: string,
   patch: { tag?: string; tagId?: string; detail?: string },
@@ -715,7 +795,7 @@ export const updateCompletedRecord = (
   const data = getLocalData()
   const record = data.completedRecords.find((r) => r.id === id)
 
-  if (!record || record.ownerKey !== 'me' || record.completionMode !== 'timed') {
+  if (!record || record.completionMode !== 'timed') {
     return false
   }
 
@@ -729,7 +809,31 @@ export const updateCompletedRecord = (
     completedRecords: data.completedRecords.map((r) => (r.id === id ? updated : r)),
   })
 
-  notifyCloudDataChanged()
+  notifyCloudDataChanged({ completedRecordIds: [id] })
+  return true
+}
+
+/** 云端完成记录更新成功后使用，不会再次触发异步云同步。 */
+export const updateCompletedRecordLocally = (
+  id: string,
+  patch: { tag?: string; tagId?: string; detail?: string },
+): boolean => {
+  const data = getLocalData()
+  const record = data.completedRecords.find((item) => item.id === id)
+
+  if (!record || record.completionMode !== 'timed') {
+    return false
+  }
+
+  const updated: CompletedRecord = { ...record }
+  if (patch.tag !== undefined) updated.tag = patch.tag
+  if (patch.tagId !== undefined) updated.tagId = patch.tagId
+  if (patch.detail !== undefined) updated.detail = patch.detail
+
+  saveLocalData({
+    ...data,
+    completedRecords: data.completedRecords.map((item) => (item.id === id ? updated : item)),
+  })
   return true
 }
 
@@ -737,7 +841,7 @@ export const deleteCompletedRecord = (id: string): boolean => {
   const data = getLocalData()
   const record = data.completedRecords.find((r) => r.id === id)
 
-  if (!record || record.ownerKey !== 'me' || record.completionMode !== 'timed') {
+  if (!record || record.completionMode !== 'timed') {
     return false
   }
 
@@ -747,7 +851,24 @@ export const deleteCompletedRecord = (id: string): boolean => {
   })
 
   markCompletedRecordDeleted(id)
-  notifyCloudDataChanged()
+  notifyCloudDataChanged({ deletedCompletedRecordIds: [id] })
+  return true
+}
+
+/** 云端删除成功后使用，不会再次触发异步云同步。 */
+export const removeCompletedRecordLocally = (id: string): boolean => {
+  const data = getLocalData()
+  const record = data.completedRecords.find((item) => item.id === id)
+
+  if (!record || record.completionMode !== 'timed') {
+    return false
+  }
+
+  saveLocalData({
+    ...data,
+    completedRecords: data.completedRecords.filter((item) => item.id !== id),
+  })
+  clearCompletedRecordDeletion(id)
   return true
 }
 

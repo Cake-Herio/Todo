@@ -1,8 +1,9 @@
 import {
   getBindablePlansForToday,
+  buildTimedCompletion,
   getPlanById,
   getToday,
-  saveTimedCompletion,
+  saveTimedCompletionLocally,
   type Plan,
 } from '../../utils/data'
 import {
@@ -21,6 +22,7 @@ import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-prefere
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
 import { addPlanTagOption, getPlanTagNames } from '../../utils/plan-tags'
 import { getScrollFadeState } from '../../utils/scroll-fade'
+import { saveTimedCompletionOnCloud } from '../../utils/cloud-sync'
 
 interface BindablePlanView {
   id: string
@@ -115,6 +117,7 @@ interface LocalFocusSession {
 
 const LOCAL_FOCUS_KEY = 'myforest_local_focus_session'
 const LOCAL_FOCUS_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 小时过期
+const PENDING_STATS_TOAST_KEY = 'myforest_pending_stats_toast'
 
 const saveLocalFocusSession = (component: WechatMiniprogram.Component.TrivialInstance) => {
   const data = component.data as Record<string, unknown>
@@ -191,6 +194,7 @@ Component({
     isPaused: false,
     isFinishPanelVisible: false,
     isFinishPanelClosing: false,
+    isSavingCompletion: false,
     isShortFocusConfirmVisible: false,
     isShortFocusConfirmClosing: false,
     linkedPlanId: '',
@@ -334,7 +338,7 @@ Component({
 
       this.setData({ backGuardShow: true })
     },
-    leaveFocusPage(options?: { home?: boolean }) {
+    leaveFocusPage(options?: { home?: boolean; stats?: boolean }) {
       if (this.leavingFocus) {
         return
       }
@@ -346,6 +350,19 @@ Component({
 
       const finishLeave = () => {
         this.leavingFocus = false
+      }
+
+      if (options?.stats) {
+        wx.reLaunch({
+          url: '/pages/stats/stats',
+          fail: () => {
+            wx.switchTab({
+              url: '/pages/stats/stats',
+              fail: finishLeave,
+            })
+          },
+        })
+        return
       }
 
       if (options?.home) {
@@ -937,13 +954,21 @@ Component({
       })
     },
     closeFinishPanel() {
+      if (this.data.isSavingCompletion) {
+        return
+      }
+
       dismissModal(this, 'isFinishPanelVisible', 'isFinishPanelClosing', {
         onDismissed: () => {
           this.leaveFocusPage()
         },
       })
     },
-    saveCompletion() {
+    async saveCompletion() {
+      if (this.data.isSavingCompletion) {
+        return
+      }
+
       if (!`${this.data.selectedTag || ''}`.trim()) {
         wx.showToast({
           title: '请先选择一个标签',
@@ -964,7 +989,7 @@ Component({
 
       const actualMinutes = Math.max(1, Math.ceil(elapsedSeconds / 60))
 
-      saveTimedCompletion({
+      const draft = buildTimedCompletion({
         tag: this.data.selectedTag,
         detail: this.data.detail,
         actualMinutes,
@@ -973,13 +998,25 @@ Component({
         planId: this.data.linkedPlanId || undefined,
       })
 
+      this.setData({ isSavingCompletion: true })
+      try {
+        await saveTimedCompletionOnCloud(draft)
+      } catch (error) {
+        this.setData({ isSavingCompletion: false })
+        wx.showToast({
+          title: error instanceof Error ? error.message : '云端保存失败，请稍后重试',
+          icon: 'none',
+        })
+        return
+      }
+
+      saveTimedCompletionLocally(draft)
+
       dismissModal(this, 'isFinishPanelVisible', 'isFinishPanelClosing', {
         onDismissed: () => {
-          wx.showToast({
-            title: '已记录',
-            icon: 'success',
-          })
-          this.leaveFocusPage({ home: true })
+          this.setData({ isSavingCompletion: false })
+          wx.setStorageSync(PENDING_STATS_TOAST_KEY, 'recorded')
+          this.leaveFocusPage({ stats: true })
         },
       })
     },
