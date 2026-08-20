@@ -1,27 +1,5 @@
 <view class="owner-filter-row">
-  <view wx:if="{{pinnedFilter}}" class="owner-filter-pinned">
-    <view
-      class="filter-chip avatar-filter {{activeFilter === pinnedFilter.key ? 'active' : ''}}"
-      data-filter="{{pinnedFilter.key}}"
-      bindtap="onFilterTap"
-    >
-      <view class="filter-avatars">
-        <image
-          wx:for="{{pinnedFilter.avatars}}"
-          wx:key="key"
-          wx:for-item="avatar"
-          class="filter-avatar {{avatar.key === 'partner' ? 'blue' : 'green'}}"
-          data-avatar-url="{{avatar.url}}"
-          src="{{avatar.url}}"
-          mode="aspectFill"
-          binderror="onAvatarError"
-        ></image>
-      </view>
-      <text class="filter-label">{{pinnedFilter.label}}</text>
-    </view>
-  </view>
-
-  <view class="owner-filter-scroll-wrap {{pinnedFilter ? '' : 'is-full'}}">
+  <view class="owner-filter-scroll-wrap is-full">
     <view class="owner-filter-scroll-fade owner-filter-scroll-fade-left {{showFilterScrollFadeLeft ? 'is-visible' : ''}}"></view>
     <scroll-view
       class="owner-filter-scroll"

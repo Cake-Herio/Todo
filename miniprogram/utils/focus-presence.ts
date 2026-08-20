@@ -35,6 +35,7 @@ export interface PartnerFocusView {
   name: string
   status: string
   duration: string
+  elapsedSeconds: number
   avatarUrl: string
 }
 
@@ -71,9 +72,16 @@ const getDb = () => wx.cloud.database()
 
 export const canPublishFocusPresence = () => isSharedSpaceMode()
 
-const formatDurationLabel = (elapsedSeconds: number) => {
+export const formatFocusPresenceDuration = (elapsedSeconds: number) => {
   const minutes = Math.max(1, Math.ceil(Math.max(elapsedSeconds, 0) / 60))
-  return `${minutes} 分钟`
+  if (minutes < 60) {
+    return `${minutes} 分钟`
+  }
+
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+
+  return rest === 0 ? `${hours} 小时` : `${hours} 小时 ${rest} 分钟`
 }
 
 const resolveFocusStatusLabel = (doc: FocusSessionDoc) => {
@@ -138,7 +146,7 @@ const toSelfFocusView = async (
   return {
     name: session.nickname || '我',
     status: resolveFocusStatusLabel(doc),
-    duration: formatDurationLabel(elapsedSeconds),
+    duration: formatFocusPresenceDuration(elapsedSeconds),
     avatarUrl,
     restore: toOwnFocusRestore(doc),
   }
@@ -154,7 +162,8 @@ const toPartnerFocusView = async (
   return {
     name: doc.nickname || '对方',
     status: resolveFocusStatusLabel(doc),
-    duration: formatDurationLabel(elapsedSeconds),
+    duration: formatFocusPresenceDuration(elapsedSeconds),
+    elapsedSeconds,
     avatarUrl,
   }
 }

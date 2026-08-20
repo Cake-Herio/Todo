@@ -1,4 +1,4 @@
-import { splitOwnerFilters, type OwnerFilterOption } from '../../utils/owner-filters'
+import type { OwnerFilterOption } from '../../utils/owner-filters'
 import { getScrollFadeState } from '../../utils/scroll-fade'
 
 Component({
@@ -9,19 +9,17 @@ Component({
     },
     activeFilter: {
       type: String,
-      value: 'all',
+      value: 'me',
     },
   },
   data: {
-    pinnedFilter: null as OwnerFilterOption | null,
     scrollFilters: [] as OwnerFilterOption[],
     showFilterScrollFadeLeft: false,
     showFilterScrollFadeRight: false,
   },
   observers: {
     filters(filters: OwnerFilterOption[]) {
-      const { pinnedFilter, scrollFilters } = splitOwnerFilters(filters || [])
-      this.setData({ pinnedFilter, scrollFilters })
+      this.setData({ scrollFilters: filters || [] })
       this.updateFilterScrollFades()
     },
   },

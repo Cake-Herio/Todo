@@ -5,7 +5,7 @@ import { getDisplayAvatarUrl, getDisplayNickname, getPartnerDisplayAvatarUrl, ge
 import { getOwnerFilterStateLocal } from '../../utils/owner-filters'
 import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-preference'
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
-import { fetchOwnFocusPresence, fetchPartnerFocusPresence } from '../../utils/focus-presence'
+import { fetchOwnFocusPresence, fetchPartnerFocusPresence, formatFocusPresenceDuration } from '../../utils/focus-presence'
 import {
   parseVoicePlanCommandWithDeepSeek,
   refineVoiceCommandWithDeepSeek,
@@ -374,7 +374,7 @@ Component({
     loginInviteCode: '',
     isProfileSaving: false,
     heroTreeSrc: '/images/home/hero-tree.png',
-    singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
+    singleUserMode: getOwnerFilterStateLocal('me').singleUserMode,
     partnerNickname: getPartnerDisplayNickname(),
     partnerAvatarUrl: getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner'),
     partnerFocusVisible: false,
@@ -384,6 +384,7 @@ Component({
       name: '对方',
       status: '专注',
       duration: '',
+      elapsedSeconds: 0,
       avatarUrl: getOwnerAvatarUrl('partner'),
     },
     selfFocus: {
@@ -458,6 +459,7 @@ Component({
     },
     detached() {
       this.stopPartnerFocusPolling()
+      this.stopPartnerDurationAnimation()
     },
   },
   pageLifetimes: {
@@ -467,6 +469,7 @@ Component({
     },
     hide() {
       this.stopPartnerFocusPolling()
+      this.stopPartnerDurationAnimation()
     },
   },
   methods: {
@@ -556,7 +559,7 @@ Component({
         nickname: getDisplayNickname(),
         avatarUrl: getDisplayAvatarUrl(),
         needProfileLogin,
-        singleUserMode: getOwnerFilterStateLocal(this.data.activeFilter || 'all').singleUserMode,
+        singleUserMode: getOwnerFilterStateLocal(this.data.activeFilter || 'me').singleUserMode,
         partnerNickname: getPartnerDisplayNickname(),
         partnerAvatarUrl: getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner'),
         loginAvatarPreviewUrl: this.data.loginAvatarPreviewUrl || getDisplayAvatarUrl(),
@@ -611,6 +614,56 @@ Component({
       clearInterval(timer)
       ;(this as WechatMiniprogram.IAnyObject)._partnerFocusPollTimer = 0
     },
+    stopPartnerDurationAnimation() {
+      const state = this as WechatMiniprogram.IAnyObject
+      const timer = state._partnerDurationAnimationTimer as number | undefined
+      if (timer) {
+        clearTimeout(timer)
+      }
+      state._partnerDurationAnimationTimer = 0
+      state._partnerDurationAnimationToken = (state._partnerDurationAnimationToken as number || 0) + 1
+    },
+    animatePartnerDuration(targetPartner: Record<string, unknown>) {
+      const targetSeconds = Number(targetPartner.elapsedSeconds)
+      const previousSeconds = Number(this.data.partner.elapsedSeconds || 0)
+
+      if (!Number.isFinite(targetSeconds) || targetSeconds <= 0 || previousSeconds <= 0 || targetSeconds === previousSeconds) {
+        this.setData({ partner: targetPartner })
+        return
+      }
+
+      this.stopPartnerDurationAnimation()
+      const state = this as WechatMiniprogram.IAnyObject
+      const token = state._partnerDurationAnimationToken as number
+      const startedAt = Date.now()
+      const delta = targetSeconds - previousSeconds
+      const durationMs = 800
+
+      const step = () => {
+        if ((state._partnerDurationAnimationToken as number) !== token) {
+          return
+        }
+
+        const progress = Math.min((Date.now() - startedAt) / durationMs, 1)
+        const eased = 1 - (1 - progress) ** 3
+        const elapsedSeconds = Math.round(previousSeconds + delta * eased)
+        this.setData({
+          partner: {
+            ...targetPartner,
+            elapsedSeconds,
+            duration: formatFocusPresenceDuration(elapsedSeconds),
+          },
+        })
+
+        if (progress < 1) {
+          state._partnerDurationAnimationTimer = setTimeout(step, 40) as unknown as number
+        } else {
+          state._partnerDurationAnimationTimer = 0
+        }
+      }
+
+      step()
+    },
     async prefetchPartnerAvatar() {
       const session = getSession()
       const displayUrl = await preloadAvatar(session?.partnerAvatarSourceUrl || session?.partnerAvatarUrl || '')
@@ -632,7 +685,7 @@ Component({
       }
     },
     async refreshFocusPresence() {
-      const state = getOwnerFilterStateLocal('all')
+      const state = getOwnerFilterStateLocal('me')
       const session = getSession()
       const partnerAvatarFallback = getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner')
       const selfAvatarFallback = getDisplayAvatarUrl() || getDefaultAvatarUrl()
@@ -695,13 +748,19 @@ Component({
         avatarUrl: partnerAvatarFallback,
       }
       const prevPartner = this.data.partner
+      const partnerDurationChanged =
+        Boolean(partner) && Number(nextPartner.elapsedSeconds) !== Number(prevPartner.elapsedSeconds || 0)
       if (
         nextPartner.name !== prevPartner.name ||
         nextPartner.status !== prevPartner.status ||
         nextPartner.duration !== prevPartner.duration ||
         nextPartner.avatarUrl !== prevPartner.avatarUrl
       ) {
-        updates.partner = nextPartner
+        if (partnerDurationChanged) {
+          this.animatePartnerDuration(nextPartner as Record<string, unknown>)
+        } else {
+          updates.partner = nextPartner
+        }
       }
 
       const nextSelf = self || {

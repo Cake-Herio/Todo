@@ -1,17 +1,18 @@
 <page-meta page-style="{{pageFontStyle}}" />
 <view class="stats-page-shell" style="{{pageFontStyle}}">
+  <view class="stats-fixed-header" style="padding-top: {{safeTopPx}}px;">
+    <view class="page-top-header">
+      <view class="page-top-title">{{rangeLabel}}统计</view>
+      <view class="muted">按标签、成员和时间范围查看</view>
+    </view>
+  </view>
   <scroll-view class="scroll-page stats-scroll" scroll-y type="list">
     <view
       class="page stats-page"
-      style="padding-top: {{safeTopPx}}px;"
+      style="padding-top: calc({{safeTopPx}}px + 112rpx);"
       bindtouchstart="onSwipeStart"
       bindtouchend="onSwipeEnd"
     >
-      <view class="page-top-header">
-        <view class="page-top-title">{{rangeLabel}}统计</view>
-        <view class="muted">按标签、成员和时间范围查看</view>
-      </view>
-
       <view class="stats-range-switch-wrap">
         <view class="stats-range-switch">
           <view class="stats-range-switch-thumb" style="transform: translateX({{rangeIndex * 100}}%);"></view>
@@ -36,6 +37,7 @@
         <button class="period-button next {{canGoNextPeriod ? '' : 'disabled'}}" data-offset="1" bindtap="changePeriod">›</button>
       </view>
 
+      <owner-filter-bar filters="{{filters}}" activeFilter="{{activeFilter}}" bind:change="setFilter" />
       <view class="stats-tag-filter">
         <view class="stats-tag-filter-bar">
           <view class="stats-tag-filter-btn" bindtap="openTagFilterSheet">
@@ -82,36 +84,18 @@
         </view>
       </view>
 
-      <block wx:if="{{hasTagStats}}">
-      <view class="section-title">标签时长</view>
-      <view class="tag-list card">
-        <view wx:for="{{displayTagStats}}" wx:key="_rk" class="tag-stat">
-          <view class="tag-row">
-            <plan-tag-pill name="{{item.tag}}" color="{{item.color}}" size="sm" />
-            <text class="tag-time">{{item.animTime}}</text>
-          </view>
-          <view class="bar">
-            <view class="bar-fill" style="transform: scaleX({{item.animPercent / 100}}); transform-origin: left center; background: {{item.color}};"></view>
-          </view>
-        </view>
-      </view>
-      </block>
-
       <view class="section-title">标签占比</view>
-      <view class="chart-card chart-card-pie card" catchtouchstart="noop" catchtouchend="noop">
+      <view class="chart-card chart-card-pie card">
         <view class="chart-panel">
           <view class="chart-canvas">
             <ec-canvas id="pie-chart" canvas-id="stats-pie" ec="{{pieEc}}" class="chart-ec-canvas"></ec-canvas>
           </view>
-          <view class="chart-center-copy">
-            <text class="chart-center-value">{{totalFocus}}</text>
-            <text class="chart-center-label">总专注</text>
-          </view>
+          <image class="chart-center-tree" src="/images/home/hero-tree.png" mode="aspectFit"></image>
         </view>
       </view>
 
       <view class="section-title">时段分布</view>
-      <view class="chart-card chart-card-bar card" catchtouchstart="noop" catchtouchend="noop">
+      <view class="chart-card chart-card-bar card">
         <view class="chart-panel">
           <view class="chart-canvas">
             <ec-canvas id="bar-chart" canvas-id="stats-bar" ec="{{barEc}}" class="chart-ec-canvas"></ec-canvas>

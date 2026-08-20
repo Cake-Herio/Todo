@@ -45,14 +45,6 @@ export const buildOwnerFilters = (hasPartner: boolean): OwnerFilterOption[] => {
   }
 
   return [
-    {
-      key: 'all',
-      label: '全部',
-      avatars: [
-        { key: 'me', url: meAvatar },
-        { key: 'partner', url: partnerAvatar },
-      ],
-    },
     meFilter,
     {
       key: 'partner',
@@ -62,24 +54,16 @@ export const buildOwnerFilters = (hasPartner: boolean): OwnerFilterOption[] => {
   ]
 }
 
-/** 「全部」固定左侧，其余成员胶囊放入横向滚动区 */
-export const splitOwnerFilters = (filters: OwnerFilterOption[]) => {
-  const pinnedFilter = filters.find((item) => item.key === 'all') || null
-  const scrollFilters = pinnedFilter ? filters.filter((item) => item.key !== 'all') : filters
-
-  return { pinnedFilter, scrollFilters }
-}
-
 export const normalizeOwnerFilter = (activeFilter: string, hasPartner: boolean) => {
   if (!hasPartner) {
     return 'me'
   }
 
-  if (activeFilter === 'all' || activeFilter === 'me' || activeFilter === 'partner') {
+  if (activeFilter === 'me' || activeFilter === 'partner') {
     return activeFilter
   }
 
-  return 'all'
+  return 'me'
 }
 
 const fetchSpaceMembersViaCloudFunction = async (): Promise<SpaceMember[] | null> => {

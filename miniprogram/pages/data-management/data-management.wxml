@@ -1,0 +1,42 @@
+<page-meta page-style="{{pageFontStyle}}" />
+<view class="data-management-page-shell" style="{{pageFontStyle}}">
+  <navigation-bar title="数据处理" back="{{true}}" color="#2F3A34" background="transparent"></navigation-bar>
+
+  <scroll-view class="scroll-page data-management-scroll" scroll-y type="list">
+    <view class="page data-management-page">
+
+      <view class="data-command-card card">
+        <view class="item-label">输入指令</view>
+        <textarea
+          class="data-command-input"
+          value="{{commandInput}}"
+          maxlength="160"
+          auto-height
+          placeholder="delete completed_records before=2026-08-19"
+          bindinput="onCommandInput"
+        />
+        <button class="data-preview-button primary-button" loading="{{isLoading && actionType === 'preview'}}" bindtap="previewCommand">预览影响范围</button>
+      </view>
+
+      <view wx:if="{{previewVisible}}" class="data-result-card card">
+        <view class="data-result-header">
+          <view class="item-label">预览结果</view>
+          <view class="data-result-count">{{previewCount}} 条</view>
+        </view>
+        <view wx:if="{{previewItems.length}}" class="data-result-list">
+          <view wx:for="{{previewItems}}" wx:key="id" class="data-result-item">
+            <view class="data-result-item-main">
+              <view>{{item.title}}</view>
+              <view class="muted">{{item.collection}} · {{item.date}}</view>
+            </view>
+            <text class="data-result-item-id">{{item.id}}</text>
+          </view>
+        </view>
+        <view wx:else class="muted data-empty-result">没有匹配的数据</view>
+        <button wx:if="{{previewDestructive && previewCount > 0}}" class="data-execute-button danger-button" loading="{{isLoading && actionType === 'execute'}}" bindtap="executeCommand">确认删除 {{previewCount}} 条</button>
+      </view>
+
+      <view wx:if="{{resultMessage}}" class="data-result-message muted">{{resultMessage}}</view>
+    </view>
+  </scroll-view>
+</view>

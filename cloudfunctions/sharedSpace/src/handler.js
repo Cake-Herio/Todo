@@ -5,6 +5,7 @@ cloud.init({
 })
 
 const db = cloud.database()
+const _ = db.command
 
 const DEFAULT_CODE = 'FOREST2026'
 const MAX_ROOM_MEMBERS = 3
@@ -874,6 +875,170 @@ const deleteCompletedRecord = async (openid, user, payload = {}) => {
   return { ok: true, removed: Boolean(record) }
 }
 
+const getMaintenanceOwner = (doc) => doc?.userId || doc?.ownerOpenid || doc?.openid || doc?._openid || ''
+
+const getChinaDate = (timestamp) => {
+  const value = Number(timestamp)
+  if (!Number.isFinite(value) || value <= 0) {
+    return ''
+  }
+
+  return new Date(value + 8 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+const parseMaintenanceCommand = (rawCommand) => {
+  const command = `${rawCommand || ''}`.trim()
+
+  const previewMatch = command.match(/^preview\s+completed_records(?:\s+scope=(mine|all))?$/i)
+  if (previewMatch) {
+    return { type: 'previewRecords', destructive: false, scope: previewMatch[1] || 'all' }
+  }
+
+  const recordIdMatch = command.match(/^delete\s+completed_records\s+where\s+id=([A-Za-z0-9._:-]+)$/i)
+  if (recordIdMatch) {
+    return { type: 'deleteRecordId', destructive: true, id: recordIdMatch[1], scope: 'all' }
+  }
+
+  const recordDateMatch = command.match(/^delete\s+completed_records\s+where\s+date=(\d{4}-\d{2}-\d{2})(?:\s+scope=(mine|all))?$/i)
+  if (recordDateMatch) {
+    return { type: 'deleteRecordDate', destructive: true, date: recordDateMatch[1], scope: recordDateMatch[2] || 'all' }
+  }
+
+  const recordBeforeMatch = command.match(/^delete\s+completed_records\s+before=(\d{4}-\d{2}-\d{2})(?:\s+scope=(mine|all))?$/i)
+  if (recordBeforeMatch) {
+    return { type: 'deleteRecordBefore', destructive: true, date: recordBeforeMatch[1], scope: recordBeforeMatch[2] || 'all' }
+  }
+
+  const testPrefixMatch = command.match(/^delete\s+test\s+data\s+prefix=([A-Za-z0-9_-]{1,32})(?:\s+scope=(mine|all))?$/i)
+  if (testPrefixMatch) {
+    return { type: 'deleteTestData', destructive: true, prefix: testPrefixMatch[1], scope: testPrefixMatch[2] || 'all' }
+  }
+
+  throw new Error('无法识别这条删除指令')
+}
+
+const loadOwnMaintenanceDocs = async (collectionName, sharedSpaceId, openid) => {
+  const result = await db.collection(collectionName).where({ sharedSpaceId }).get()
+  return (result.data || []).filter((doc) => getMaintenanceOwner(doc) === openid)
+}
+
+const loadGlobalMaintenanceDocs = async (collectionName) => {
+  const result = await db.collection(collectionName).get()
+  return result.data || []
+}
+
+const getChinaDateStartMs = (date) => new Date(`${date}T00:00:00+08:00`).getTime()
+
+const loadGlobalRecordsByDate = async (parsed) => {
+  const collection = db.collection('completed_records')
+  let result
+
+  if (parsed.type === 'deleteRecordBefore') {
+    result = await collection
+      .where({ completedAt: _.lt(getChinaDateStartMs(parsed.date)) })
+      .limit(101)
+      .get()
+  } else if (parsed.type === 'deleteRecordDate') {
+    const start = getChinaDateStartMs(parsed.date)
+    const end = start + 24 * 60 * 60 * 1000
+    result = await collection
+      .where({ completedAt: _.gte(start).and(_.lt(end)) })
+      .limit(101)
+      .get()
+  } else {
+    result = await collection.where({ id: parsed.id }).limit(101).get()
+  }
+
+  return result.data || []
+}
+
+const toMaintenanceItem = (collection, doc) => ({
+  collection,
+  id: doc.id || doc._id || '',
+  title: doc.title || doc.tag || doc.detail || '未命名数据',
+  date: doc.date || getChinaDate(doc.completedAt || doc.createdAt || doc.updatedAt),
+})
+
+const getMaintenanceTargets = async (openid, user, parsed) => {
+  const sharedSpaceId = user?.sharedSpaceId
+  const loadRecords = parsed.scope === 'all'
+    ? () => loadGlobalMaintenanceDocs('completed_records')
+    : () => loadOwnMaintenanceDocs('completed_records', sharedSpaceId, openid)
+
+  if (parsed.type === 'previewRecords') {
+    const records = await loadRecords()
+    return records.map((doc) => ({ collection: 'completed_records', doc }))
+  }
+
+  if (parsed.type === 'deleteRecordId' || parsed.type === 'deleteRecordDate' || parsed.type === 'deleteRecordBefore') {
+    const records = parsed.scope === 'all'
+      ? await loadGlobalRecordsByDate(parsed)
+      : await loadRecords()
+    return records
+      .filter((doc) => parsed.type === 'deleteRecordId'
+        ? doc.id === parsed.id
+        : parsed.type === 'deleteRecordDate'
+          ? getChinaDate(doc.completedAt) === parsed.date
+          : getChinaDate(doc.completedAt) < parsed.date)
+      .map((doc) => ({ collection: 'completed_records', doc }))
+  }
+
+  const loadData = parsed.scope === 'all'
+    ? (collectionName) => loadGlobalMaintenanceDocs(collectionName)
+    : (collectionName) => loadOwnMaintenanceDocs(collectionName, sharedSpaceId, openid)
+  const [plans, records] = await Promise.all([
+    loadData('plans'),
+    loadData('completed_records'),
+  ])
+  const matchesPrefix = (doc) => `${doc.id || ''}`.startsWith(parsed.prefix)
+
+  return [
+    ...plans.filter(matchesPrefix).map((doc) => ({ collection: 'plans', doc })),
+    ...records.filter(matchesPrefix).map((doc) => ({ collection: 'completed_records', doc })),
+  ]
+}
+
+const dataMaintenance = async (openid, user, payload = {}) => {
+  const parsed = parseMaintenanceCommand(payload.command)
+  if (parsed.scope !== 'all' && !user?.sharedSpaceId) {
+    return { ok: false, message: '未加入共享空间' }
+  }
+  const targets = await getMaintenanceTargets(openid, user, parsed)
+
+  if (targets.length > 100) {
+    return { ok: false, message: '影响数据超过 100 条，请缩小删除范围' }
+  }
+
+  const items = targets.map((target) => toMaintenanceItem(target.collection, target.doc))
+  if (!payload.execute) {
+    return {
+      ok: true,
+      destructive: parsed.destructive,
+      executed: false,
+      count: targets.length,
+      items,
+    }
+  }
+
+  if (!parsed.destructive) {
+    return { ok: false, message: '该指令只能预览，不能执行删除' }
+  }
+
+  for (const target of targets) {
+    if (target.doc?._id) {
+      await db.collection(target.collection).doc(target.doc._id).remove()
+    }
+  }
+
+  return {
+    ok: true,
+    destructive: true,
+    executed: true,
+    count: targets.length,
+    items,
+  }
+}
+
 exports.main = async (event) => {
   const wxContext = cloud.getWXContext()
   const openid = wxContext.OPENID
@@ -889,6 +1054,7 @@ exports.main = async (event) => {
     'restoreSession',
     'resolveAvatar',
     'listFocusSessions',
+    'dataMaintenance',
     'deleteCompletedRecord',
     'listTags',
     'upsertTag',
@@ -1045,6 +1211,10 @@ exports.main = async (event) => {
           sharedSpaceId: user.sharedSpaceId,
           sessions,
         }
+      }
+
+      if (event.action === 'dataMaintenance') {
+        return await dataMaintenance(openid, user, event.payload || {})
       }
 
       if (event.action === 'deleteCompletedRecord') {

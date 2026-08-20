@@ -13,6 +13,13 @@
   </view>
 </template>
 
+<view class="timeline-fixed-header" style="padding-top: {{safeTopPx}}px;">
+  <view class="page-top-header completed-day-back" bindtap="goBack">
+    <view class="page-top-title">{{dateTitle}}</view>
+    <view class="muted">时间轴</view>
+  </view>
+</view>
+
 <scroll-view
   class="scroll-page completed-day-scroll"
   style="{{pageFontStyle}}"
@@ -21,12 +28,7 @@
   scroll-top="{{scrollWithTop ? scrollTop : ''}}"
   scroll-with-animation="{{false}}"
 >
-  <view class="page completed-day-page timeline-scroll-wrap {{boardVisible ? 'is-visible' : ''}}" style="padding-top: {{safeTopPx}}px;">
-    <view class="page-top-header completed-day-back" bindtap="goBack">
-      <view class="page-top-title">{{dateTitle}}</view>
-      <view class="muted">时间轴</view>
-    </view>
-
+  <view class="page completed-day-page timeline-scroll-wrap {{boardVisible ? 'is-visible' : ''}}" style="padding-top: calc({{safeTopPx}}px + 112rpx);">
     <owner-filter-bar filters="{{filters}}" activeFilter="{{activeFilter}}" bind:change="setFilter" />
 
     <view class="day-board completed-day-board" style="height: {{boardHeight}}rpx;">

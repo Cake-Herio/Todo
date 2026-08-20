@@ -47,7 +47,8 @@ const buildSettingsItems = (fontPreference: FontPreferenceKey, roomTotalCount = 
   { label: '灵动岛', desc: getActivitySmithStatusLabel() },
   { label: 'Bark 推送', desc: getBarkStatusLabel() },
   { label: '字体', desc: getFontPreferenceLabel(fontPreference) },
-  { label: '关于 MyForest', desc: '本地优先，云备份同步' },
+  { label: '数据处理', desc: '预览并清理当前房间中的测试数据' },
+  // { label: '关于 MyForest', desc: '本地优先，云备份同步' },
 ]
 }
 
@@ -695,6 +696,13 @@ Component({
       if (label === '计时记录') {
         wx.navigateTo({
           url: '/pages/focus-records/focus-records',
+        })
+        return
+      }
+
+      if (label === '数据处理') {
+        wx.navigateTo({
+          url: '/pages/data-management/data-management',
         })
         return
       }

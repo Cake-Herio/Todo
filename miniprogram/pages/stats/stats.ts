@@ -4,6 +4,7 @@ import { getFontPageStyle, refreshPageFontStyle } from '../../utils/font-prefere
 import { getPlanTagColor } from '../../utils/plan-tags'
 import { dismissModal, openModal } from '../../utils/modal-dismiss'
 import { getScrollFadeState } from '../../utils/scroll-fade'
+import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
 import * as echarts from '../../components/ec-canvas/echarts'
 
 type StatsRange = 'day' | 'week' | 'month' | 'year'
@@ -18,20 +19,6 @@ interface StatsCard {
   label: string
   value: string
   icon: string
-}
-
-interface TagStatView {
-  tag: string
-  time: string
-  minutes: number
-  percent: number
-  color: string
-}
-
-interface TagStatDisplayView extends TagStatView {
-  animPercent: number
-  animTime: string
-  _rk: string
 }
 
 interface TagPieLegendView {
@@ -415,13 +402,13 @@ const getNiceAxisMax = (max: number) => {
 }
 
 const formatChartMinutes = (minutes: number) => {
-  if (minutes <= 0) return '0'
-  if (minutes < 1) return `${Math.round(minutes * 60)}秒`
-  if (minutes < 60) return `${Math.round(minutes)}分钟`
+  if (minutes <= 0) return '0m'
+  if (minutes < 1) return `${Math.round(minutes * 60)}s`
+  if (minutes < 60) return `${Math.round(minutes)}m`
 
   const hours = Math.floor(minutes / 60)
   const rest = Math.round(minutes % 60)
-  return rest === 0 ? `${hours}小时` : `${hours}小时${rest}分`
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
 }
 
 type EChartOption = Record<string, any>
@@ -587,14 +574,19 @@ const buildStatsView = (
   periodAnchor: number,
   tagFilterMode: TagFilterMode = 'all',
   selectedTagKeys: string[] = [],
+  ownerFilter = 'me',
 ) => {
-  const myRecords = getCompletedRecords().filter((record) => record.ownerKey === 'me')
-  const myPlans = getPlans().filter((plan) => plan.ownerKey === 'me')
-  const rangeRecords = filterRecordsByRange(myRecords, range, periodAnchor)
+  const ownerRecords = getCompletedRecords().filter(
+    (record) => ownerFilter === 'all' || record.ownerKey === ownerFilter,
+  )
+  const ownerPlans = getPlans().filter(
+    (plan) => ownerFilter === 'all' || plan.ownerKey === ownerFilter,
+  )
+  const rangeRecords = filterRecordsByRange(ownerRecords, range, periodAnchor)
   const availableTagFilters = buildAvailableTagFilters(rangeRecords)
   const records = filterByTagSelection(rangeRecords, tagFilterMode, selectedTagKeys)
   const timedCount = records.filter((record) => record.completionMode === 'timed').length
-  const plansInRange = filterByTagSelection(filterPlansByRange(myPlans, range, periodAnchor), tagFilterMode, selectedTagKeys)
+  const plansInRange = filterByTagSelection(filterPlansByRange(ownerPlans, range, periodAnchor), tagFilterMode, selectedTagKeys)
   const completedPlanCount = plansInRange.filter((plan) => plan.status === 'completed').length
   const totalPlanCount = plansInRange.length
   const totalMinutes = records.reduce((total, record) => total + (record.actualMinutes || 0), 0)
@@ -604,16 +596,6 @@ const buildStatsView = (
   const tagEntries = Object.entries(tagMinutesMap)
     .map(([tag, minutes]) => ({ tag, minutes }))
     .sort((a, b) => b.minutes - a.minutes)
-
-  const maxMinutes = Math.max(...tagEntries.map((item) => item.minutes), 1)
-
-  const tagStats: TagStatView[] = tagEntries.map((item) => ({
-    tag: item.tag,
-    time: formatFocusMinutes(item.minutes),
-    minutes: item.minutes,
-    percent: Math.round((item.minutes / maxMinutes) * 100),
-    color: getTagBindColor(item.tag),
-  }))
 
   const tagPieLegend: TagPieLegendView[] = tagEntries.map((item) => ({
     tag: item.tag,
@@ -625,8 +607,9 @@ const buildStatsView = (
 
   const cards: StatsCard[] = [
     { label: '总专注', value: formatFocusMinutes(totalMinutes), icon: '/images/icons/stats-focus.svg' },
-    { label: '计划完成/总数', value: `${completedPlanCount}/${totalPlanCount}`, icon: '/images/icons/stats-calendar.svg' },
     { label: '计时次数', value: `${timedCount}`, icon: '/images/icons/stats-trophy.svg' },
+    { label: '计划完成/总数', value: `${completedPlanCount}/${totalPlanCount}`, icon: '/images/icons/stats-calendar.svg' },
+
   ]
 
   const barBuckets = buildBarBuckets(records, range, periodAnchor)
@@ -648,9 +631,7 @@ const buildStatsView = (
     cards,
     totalFocus: formatFocusMinutes(totalMinutes),
     totalMinutes,
-    tagStats,
     tagPieLegend,
-    hasTagStats: tagStats.length > 0,
     barBuckets,
     barMaxMinutes,
     barUnitLabel,
@@ -686,8 +667,9 @@ const buildStatsPageData = (
   periodAnchor: number,
   tagFilterMode: TagFilterMode,
   selectedTagKeys: string[],
+  ownerFilter: string,
 ) => {
-  const view = buildStatsView(range, periodAnchor, tagFilterMode, selectedTagKeys)
+  const view = buildStatsView(range, periodAnchor, tagFilterMode, selectedTagKeys, ownerFilter)
   return view
 }
 
@@ -700,6 +682,9 @@ Component({
   latestBarOption: null as EChartOption | null,
   data: {
     safeTopPx: 0,
+    filters: getOwnerFilterStateLocal('me').filters,
+    activeFilter: getOwnerFilterStateLocal('me').activeFilter,
+    singleUserMode: getOwnerFilterStateLocal('me').singleUserMode,
     rangeOptions: RANGE_OPTIONS,
     statsRange: 'week' as StatsRange,
     periodAnchor: Date.now(),
@@ -712,10 +697,7 @@ Component({
     cards: [] as StatsCard[],
     totalFocus: '0m',
     totalMinutes: 0,
-    tagStats: [] as TagStatView[],
-    displayTagStats: [] as TagStatDisplayView[],
     tagPieLegend: [] as TagPieLegendView[],
-    hasTagStats: false,
     tagFilterMode: 'all' as TagFilterMode,
     selectedTagKeys: [] as string[],
     availableTagFilters: [] as TagFilterOption[],
@@ -735,8 +717,9 @@ Component({
     barMaxMinutes: 0,
     barUnitLabel: '',
     hasBarData: false,
-    pieEc: { lazyLoad: true },
-    barEc: { lazyLoad: true },
+    // Charts are display-only here so the parent scroll-view keeps all vertical gestures.
+    pieEc: { lazyLoad: true, disableTouch: true },
+    barEc: { lazyLoad: true, disableTouch: true },
     pageFontStyle: getFontPageStyle(),
   },
   lifetimes: {
@@ -745,23 +728,21 @@ Component({
       const gapPx = Math.round((16 * windowWidth) / 750)
       this.setData({ safeTopPx: statusBarHeight + gapPx })
       this.refreshStats()
+      void this.refreshOwnerFilters()
     },
     detached() {
-      this.cancelStatsAnimation()
       this.disposeCharts()
     },
   },
   pageLifetimes: {
     show() {
       refreshPageFontStyle(this)
-      refreshWithLocalFirst(() => this.refreshStats())
+      refreshWithLocalFirst(() => {
+        void this.refreshOwnerFilters()
+      })
     },
   },
   methods: {
-    cancelStatsAnimation() {
-      ;(this as WechatMiniprogram.IAnyObject).statsAnimToken =
-        ((this as WechatMiniprogram.IAnyObject).statsAnimToken || 0) + 1
-    },
     disposeCharts() {
       this.pieChart?.dispose()
       this.barChart?.dispose()
@@ -841,43 +822,43 @@ Component({
       })
     },
     applyStatsData(patch: ReturnType<typeof buildStatsPageData>) {
-      this.cancelStatsAnimation()
-
-      const { tagStats, tagPieLegend, totalMinutes, hasTagStats, barBuckets, barMaxMinutes, hasBarData } = patch
-      const token = (this as WechatMiniprogram.IAnyObject).statsAnimToken as number
-      const resetDisplay = tagStats.map((item, index) => ({
-        ...item,
-        animPercent: 0,
-        animTime: '0m',
-        _rk: `${index}-${token}`,
-      }))
-      const finalDisplay = tagStats.map((item, index) => ({
-        ...item,
-        animPercent: item.percent,
-        animTime: item.time,
-        _rk: `${index}-${token}`,
-      }))
+      const { tagPieLegend, totalMinutes, barBuckets, barMaxMinutes, hasBarData } = patch
 
       this.setData(patch)
-      this.setData({ displayTagStats: hasTagStats ? resetDisplay : [] }, () => {
-        this.updatePieChart(tagPieLegend, totalMinutes)
-        this.updateBarChart(barBuckets, barMaxMinutes, hasBarData, patch.barUnitLabel, patch.tagBarEmptyText)
-
-        wx.nextTick(() => {
-          if (token === (this as WechatMiniprogram.IAnyObject).statsAnimToken) {
-            this.setData({ displayTagStats: finalDisplay })
-          }
-        })
-      })
+      this.updatePieChart(tagPieLegend, totalMinutes)
+      this.updateBarChart(barBuckets, barMaxMinutes, hasBarData, patch.barUnitLabel, patch.tagBarEmptyText)
+    },
+    async refreshOwnerFilters() {
+      const state = await getOwnerFilterState(this.data.activeFilter)
+      this.setData(
+        {
+          filters: state.filters,
+          activeFilter: state.activeFilter,
+          singleUserMode: state.singleUserMode,
+        },
+        () => this.refreshStats(),
+      )
     },
     refreshStats() {
-      const { statsRange, periodAnchor, tagFilterMode, selectedTagKeys } = this.data
-      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      const { statsRange, periodAnchor, tagFilterMode, selectedTagKeys, activeFilter } = this.data
+      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys, activeFilter))
       this.updateTagEchoScrollFades()
     },
+    setFilter(e: WechatMiniprogram.CustomEvent<{ filter?: string }> | WechatMiniprogram.BaseEvent) {
+      const filter =
+        (e as WechatMiniprogram.CustomEvent<{ filter?: string }>).detail?.filter ||
+        (e.currentTarget?.dataset?.filter as string | undefined)
+
+      if (!filter || filter === this.data.activeFilter) {
+        return
+      }
+
+      this.setData({ activeFilter: filter })
+      this.refreshStats()
+    },
     applyTagFilterState(tagFilterMode: TagFilterMode, selectedTagKeys: string[]) {
-      const { statsRange, periodAnchor } = this.data
-      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      const { statsRange, periodAnchor, activeFilter } = this.data
+      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys, activeFilter))
       this.updateTagEchoScrollFades()
     },
     switchStatsRange(e: WechatMiniprogram.BaseEvent) {
@@ -887,13 +868,13 @@ Component({
       }
 
       const periodAnchor = Date.now()
-      const { tagFilterMode, selectedTagKeys } = this.data
+      const { tagFilterMode, selectedTagKeys, activeFilter } = this.data
 
       this.setData({
         statsRange: range,
         periodAnchor,
       })
-      this.applyStatsData(buildStatsPageData(range, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.applyStatsData(buildStatsPageData(range, periodAnchor, tagFilterMode, selectedTagKeys, activeFilter))
       this.updateTagEchoScrollFades()
     },
     changePeriod(e: WechatMiniprogram.BaseEvent) {
@@ -907,10 +888,10 @@ Component({
       }
 
       const periodAnchor = shiftPeriodAnchor(this.data.periodAnchor, this.data.statsRange, offset)
-      const { statsRange, tagFilterMode, selectedTagKeys } = this.data
+      const { statsRange, tagFilterMode, selectedTagKeys, activeFilter } = this.data
 
       this.setData({ periodAnchor })
-      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys, activeFilter))
       this.updateTagEchoScrollFades()
     },
     goToCurrentPeriod() {
@@ -919,10 +900,10 @@ Component({
       }
 
       const periodAnchor = Date.now()
-      const { statsRange, tagFilterMode, selectedTagKeys } = this.data
+      const { statsRange, tagFilterMode, selectedTagKeys, activeFilter } = this.data
 
       this.setData({ periodAnchor })
-      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.applyStatsData(buildStatsPageData(statsRange, periodAnchor, tagFilterMode, selectedTagKeys, activeFilter))
       this.updateTagEchoScrollFades()
     },
     toggleSelectAllTags() {
@@ -1027,14 +1008,14 @@ Component({
 
       const nextRange = ranges[nextIndex]
       const periodAnchor = Date.now()
-      const { tagFilterMode, selectedTagKeys } = this.data
+      const { tagFilterMode, selectedTagKeys, activeFilter } = this.data
 
       this.setData({
         statsRange: nextRange,
         rangeIndex: nextIndex,
         periodAnchor,
       })
-      this.applyStatsData(buildStatsPageData(nextRange, periodAnchor, tagFilterMode, selectedTagKeys))
+      this.applyStatsData(buildStatsPageData(nextRange, periodAnchor, tagFilterMode, selectedTagKeys, activeFilter))
       this.updateTagEchoScrollFades()
     },
   },

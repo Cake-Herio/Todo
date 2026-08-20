@@ -49,16 +49,18 @@
       </view>
     </view>
 
-    <view wx:if="{{homeContentVisible && partnerFocusVisible}}" class="companion-live card home-reveal-item {{homeRevealActive ? 'home-reveal-delay-3' : 'is-visible'}}">
-      <view class="companion-avatar-wrap">
-        <view class="companion-breathe-ring companion-breathe-ring-a"></view>
-        <view class="companion-breathe-ring companion-breathe-ring-b"></view>
-        <view class="companion-avatar-ring"></view>
-        <image class="companion-avatar" src="{{partner.avatarUrl}}" mode="aspectFill"></image>
-      </view>
-      <view class="companion-live-main">
-        <view class="companion-live-title">{{partner.name}}</view>
-        <view class="companion-live-desc">{{partner.status}} · {{partner.duration}}</view>
+    <view class="partner-focus-slot {{homeContentVisible && partnerFocusVisible ? 'is-visible' : ''}}">
+      <view class="companion-live card partner-focus-card">
+        <view class="companion-avatar-wrap">
+          <view class="companion-breathe-ring companion-breathe-ring-a"></view>
+          <view class="companion-breathe-ring companion-breathe-ring-b"></view>
+          <view class="companion-avatar-ring"></view>
+          <image class="companion-avatar" src="{{partner.avatarUrl}}" mode="aspectFill"></image>
+        </view>
+        <view class="companion-live-main">
+          <view class="companion-live-title">{{partner.name}}</view>
+          <view class="companion-live-desc">{{partner.status}} · {{partner.duration}}</view>
+        </view>
       </view>
     </view>
 

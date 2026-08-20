@@ -944,6 +944,14 @@ Component({
       })
     },
     saveCompletion() {
+      if (!`${this.data.selectedTag || ''}`.trim()) {
+        wx.showToast({
+          title: '请先选择一个标签',
+          icon: 'none',
+        })
+        return
+      }
+
       const elapsedSeconds = this.getElapsedSeconds()
 
       if (elapsedSeconds < MIN_FOCUS_SECONDS) {

@@ -15,6 +15,13 @@
   </view>
 </template>
 
+<view class="timeline-fixed-header" style="padding-top: {{safeTopPx}}px;">
+  <view class="page-top-header day-date-back" bindtap="goBack">
+    <view class="page-top-title">{{dateTitle}}</view>
+    <view class="muted">时间轴 · 时段 · 全天</view>
+  </view>
+</view>
+
 <scroll-view
   class="scroll-page day-scroll"
   style="{{pageFontStyle}}"
@@ -23,12 +30,7 @@
   scroll-top="{{scrollWithTop ? scrollTop : ''}}"
   scroll-with-animation="{{false}}"
 >
-  <view class="page day-page timeline-scroll-wrap {{boardVisible ? 'is-visible' : ''}}" style="padding-top: {{safeTopPx}}px;">
-    <view class="page-top-header day-date-back" bindtap="goBack">
-      <view class="page-top-title">{{dateTitle}}</view>
-      <view class="muted">时间轴 · 时段 · 全天</view>
-    </view>
-
+  <view class="page day-page timeline-scroll-wrap {{boardVisible ? 'is-visible' : ''}}" style="padding-top: calc({{safeTopPx}}px + 112rpx);">
     <owner-filter-bar filters="{{filters}}" activeFilter="{{activeFilter}}" bind:change="setFilter" />
 
     <view class="board-header-row">

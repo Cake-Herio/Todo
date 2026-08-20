@@ -677,9 +677,10 @@ export const formatTimedRecordTimeRange = (record: CompletedRecord) => {
     startMs = endMs - durationMs
   }
 
-  const useSeconds = formatRecordClock(startMs) === formatRecordClock(endMs)
-  const startLabel = formatRecordClock(startMs, useSeconds)
-  const endLabel = formatRecordClock(endMs, useSeconds)
+  const sameMinute = formatRecordClock(startMs) === formatRecordClock(endMs)
+  const displayEndMs = sameMinute && endMs > startMs ? endMs + 60 * 1000 : endMs
+  const startLabel = formatRecordClock(startMs)
+  const endLabel = formatRecordClock(displayEndMs)
 
   return `${startLabel} - ${endLabel}`
 }

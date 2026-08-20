@@ -10,6 +10,7 @@
     "pages/tags/tags",
     "pages/focus-records/focus-records",
     "pages/settings/settings",
+    "pages/data-management/data-management",
     "pages/logs/logs"
   ],
   "window": {

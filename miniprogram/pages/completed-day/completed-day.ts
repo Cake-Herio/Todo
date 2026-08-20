@@ -60,6 +60,9 @@ const COMPACT_CARD_WITH_DETAIL_HEIGHT = 106
 const BOARD_BOTTOM_PADDING = 24
 const TIMED_LANE_GAP = 2
 const TIMED_SINGLE_WIDTH_PERCENT = 75
+const TIMED_CONTENT_WIDTH_RPX = 652
+const TIMED_MIN_CARD_WIDTH_RPX = 280
+const TIMED_CARD_HORIZONTAL_PADDING_RPX = 24
 const CARD_STACK_GAP = 8
 const TIMELINE_BREAKPOINT_MINUTES = 120
 
@@ -203,14 +206,18 @@ const getRecordInterval = (record: CompletedRecord, selectedDate: string) => {
   if (record.startedAt) {
     const startDate = new Date(record.startedAt)
     const endDate = new Date(record.completedAt)
+    const startMin = startDate.getHours() * 60 + startDate.getMinutes()
     let endMin = endDate.getHours() * 60 + endDate.getMinutes()
 
     if (endDate.getDate() !== startDate.getDate() || (endMin === 0 && endDate > startDate)) {
       endMin = DAY_END_MINUTES
+    } else if (endMin <= startMin && endDate > startDate) {
+      // A short focus can start and end in the same minute. Keep one visible timeline minute.
+      endMin = Math.min(startMin + 1, DAY_END_MINUTES)
     }
 
     return {
-      startMin: startDate.getHours() * 60 + startDate.getMinutes(),
+      startMin,
       endMin,
     }
   }
@@ -253,14 +260,44 @@ const clipIntervalToRange = (
   }
 }
 
-const getRemarkLineCount = (detail: string, columnCount: number) => {
+const estimateTextWidth = (text: string, asciiWidth: number, wideWidth: number) =>
+  Array.from(text).reduce(
+    (width, character) => width + (/^[a-zA-Z0-9 .,!?;:'\-]$/.test(character) ? asciiWidth : wideWidth),
+    0,
+  )
+
+const getTimedColumnWidthRpx = (columnCount: number) => {
+  const normalizedColumnCount = Math.max(1, columnCount)
+  const laneWidthPercent = normalizedColumnCount === 1
+    ? 100
+    : (100 - TIMED_LANE_GAP * (normalizedColumnCount - 1)) / normalizedColumnCount
+
+  return TIMED_CONTENT_WIDTH_RPX * laneWidthPercent / 100
+}
+
+const getTimedCardWidthRpx = (
+  record: CompletedRecord,
+  startMin: number,
+  endMin: number,
+  columnCount: number,
+) => {
+  const columnWidth = getTimedColumnWidthRpx(columnCount)
+  const maxWidth = columnCount === 1 ? columnWidth * TIMED_SINGLE_WIDTH_PERCENT / 100 : columnWidth
+  const timeWidth = estimateTextWidth(formatTimeRange(startMin, endMin), 12, 20)
+  const tagRowWidth = 28 + 8 + estimateTextWidth(`${record.tag || ''}`, 10, 20) + 24 + 20
+  const detailWidth = estimateTextWidth(`${record.detail || ''}`.trim(), 12, 22) + TIMED_CARD_HORIZONTAL_PADDING_RPX
+  const desiredWidth = Math.max(TIMED_MIN_CARD_WIDTH_RPX, timeWidth + 20, tagRowWidth, detailWidth)
+
+  return Math.min(maxWidth, desiredWidth)
+}
+
+const getRemarkLineCount = (detail: string, contentWidth: number) => {
   const textWidth = Array.from(detail).reduce(
     (width, character) => width + (/^[a-zA-Z0-9 .,!?;:'\-]$/.test(character) ? 12 : 22),
     0,
   )
-  const lineWidth = columnCount > 1 ? 340 : 520
 
-  return Math.max(1, Math.ceil(textWidth / lineWidth))
+  return Math.max(1, Math.ceil(textWidth / Math.max(1, contentWidth)))
 }
 
 const getRecordMinHeight = (
@@ -275,8 +312,10 @@ const getRecordMinHeight = (
 
   if (hasDetail) {
     const baseHeight = isCompact ? COMPACT_CARD_WITH_DETAIL_HEIGHT : MIN_CARD_WITH_DETAIL_HEIGHT
-    const extraLines = getRemarkLineCount(detail, columnCount) - 1
-    return baseHeight + extraLines * 31
+    const cardWidth = getTimedCardWidthRpx(record, startMin, endMin, columnCount)
+    const contentWidth = cardWidth - TIMED_CARD_HORIZONTAL_PADDING_RPX
+    const extraLines = getRemarkLineCount(detail, contentWidth) - 1
+    return baseHeight + extraLines * (isCompact ? 26 : 31)
   }
 
   return isCompact ? COMPACT_CARD_HEIGHT : MIN_CARD_HEIGHT
@@ -415,10 +454,9 @@ const layoutOwnerColumnStack = (views: CompletedRecordView[], columnCount: numbe
       card.lane = ownerBaseLane
       card.laneCount = columnCount
       if (columnCount === 1) {
-        card.widthPercent = TIMED_SINGLE_WIDTH_PERCENT
-        card.leftPercent = (100 - TIMED_SINGLE_WIDTH_PERCENT) / 2
+        card.leftPercent = 0
       } else {
-        card.widthPercent = ownerColumnWidth
+        card.widthPercent = Math.min(card.widthPercent, ownerColumnWidth)
         card.leftPercent = ownerColumnLeft
       }
       columnBottom = card.top + card.height
@@ -451,9 +489,14 @@ const layoutTimelineRecords = (
     const top = minutesToY(clipped.startMin)
     const bottom = minutesToY(clipped.endMin)
     const minHeight = getRecordMinHeight(record, clipped.startMin, clipped.endMin, columnCount)
+    const cardWidth = getTimedCardWidthRpx(record, clipped.startMin, clipped.endMin, columnCount)
+    const columnWidth = getTimedColumnWidthRpx(columnCount)
 
     view.top = top
     view.height = Math.max(minHeight, bottom - top)
+    view.widthPercent = columnCount === 1
+      ? cardWidth / columnWidth * 100
+      : cardWidth / TIMED_CONTENT_WIDTH_RPX * 100
     views.push(view)
   })
 
@@ -531,13 +574,14 @@ const buildDayBoard = (
 
 Component({
   nowTimer: 0 as number,
+  ownerFilterRequestId: 0,
   data: {
     safeTopPx: 0,
     dateTitle: formatDateTitle(getToday()),
     selectedDate: getToday(),
-    filters: getOwnerFilterStateLocal('all').filters,
-    activeFilter: getOwnerFilterStateLocal('all').activeFilter,
-    singleUserMode: getOwnerFilterStateLocal('all').singleUserMode,
+    filters: getOwnerFilterStateLocal('me').filters,
+    activeFilter: getOwnerFilterStateLocal('me').activeFilter,
+    singleUserMode: getOwnerFilterStateLocal('me').singleUserMode,
     boardHeight: ((DAY_END_MINUTES - DAY_START_MINUTES) / 60) * HOUR_HEIGHT,
     timelineMarkers: [] as TimelineMarker[],
     records: [] as CompletedRecordView[],
@@ -551,8 +595,6 @@ Component({
   lifetimes: {
     attached() {
       this.initPageInsets()
-      this.refreshRecords()
-      this.startNowCursorTimer()
     },
     detached() {
       this.clearNowCursorTimer()
@@ -564,6 +606,7 @@ Component({
       refreshWithLocalFirst(() => {
         this.refreshRecords()
         this.startNowCursorTimer()
+        void this.refreshOwnerFilters()
       })
     },
     hide() {
@@ -579,22 +622,30 @@ Component({
     onLoad(query: { date?: string; filter?: string }) {
       const prevDate = this.data.selectedDate
       const selectedDate = query.date || getToday()
-      const activeFilter = query.filter || 'all'
+      const localFilterState = getOwnerFilterStateLocal(query.filter || 'me')
       const dateChanged = prevDate !== selectedDate
 
       this.setData({
         selectedDate,
-        activeFilter,
+        filters: localFilterState.filters,
+        activeFilter: localFilterState.activeFilter,
+        singleUserMode: localFilterState.singleUserMode,
         dateTitle: formatDateTitle(selectedDate),
         ...(dateChanged ? { hasAutoScrolled: false, boardVisible: false } : {}),
       })
       this.refreshRecords()
     },
     async refreshOwnerFilters() {
-      const prevFilter = this.data.activeFilter
+      const requestId = ++this.ownerFilterRequestId
+      const requestedFilter = this.data.activeFilter
       const prevPartnerAvatarUrl = this.data.partnerAvatarUrl
       const prevAvatarUrl = this.data.avatarUrl
-      const state = await getOwnerFilterState(prevFilter)
+      const state = await getOwnerFilterState(requestedFilter)
+
+      if (requestId !== this.ownerFilterRequestId || this.data.activeFilter !== requestedFilter) {
+        return
+      }
+
       const partnerAvatarUrl = getPartnerDisplayAvatarUrl() || getOwnerAvatarUrl('partner')
       const avatarUrl = getDisplayAvatarUrl() || getOwnerAvatarUrl('me')
       this.setData({
@@ -606,7 +657,7 @@ Component({
       })
 
       if (
-        state.activeFilter !== prevFilter ||
+        state.activeFilter !== requestedFilter ||
         partnerAvatarUrl !== prevPartnerAvatarUrl ||
         avatarUrl !== prevAvatarUrl
       ) {
@@ -644,7 +695,6 @@ Component({
         hasAutoScrolled: this.data.hasAutoScrolled,
       })
 
-      void this.refreshOwnerFilters()
     },
     setFilter(e: WechatMiniprogram.CustomEvent<{ filter?: string }> | WechatMiniprogram.BaseEvent) {
       const filter =

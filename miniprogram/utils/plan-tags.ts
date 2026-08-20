@@ -44,12 +44,6 @@ const PERSONAL_TAGS_KEY = 'myforest_personal_plan_tags_v1'
 const TAGS_MIGRATED_KEY = 'myforest_plan_tags_migrated_v1'
 
 const DEFAULT_TAG_OPTIONS: PlanTagOption[] = [
-  { id: 'builtin-english', name: '英语', color: '#98C6A8', visibility: 'shared', isBuiltin: true },
-  { id: 'builtin-code', name: '写代码', color: '#98C6A8', visibility: 'shared', isBuiltin: true },
-  { id: 'builtin-reading', name: '阅读', color: '#98C6A8', visibility: 'shared', isBuiltin: true },
-  { id: 'builtin-sport', name: '运动', color: '#7DA7D9', visibility: 'shared', isBuiltin: true },
-  { id: 'builtin-meditation', name: '冥想', color: '#9B8DD9', visibility: 'shared', isBuiltin: true },
-  { id: 'builtin-writing', name: '写作', color: '#F1B86A', visibility: 'shared', isBuiltin: true },
   { id: 'builtin-study', name: '学习', color: '#8BC4D9', visibility: 'shared', isBuiltin: true },
   { id: 'builtin-organize', name: '整理', color: '#7BC8B8', visibility: 'shared', isBuiltin: true },
   { id: 'builtin-review', name: '复盘', color: '#D98BB0', visibility: 'shared', isBuiltin: true },
@@ -200,9 +194,9 @@ const getEffectiveTags = (): PlanTagOption[] => {
   if (isSessionReady()) {
     const cloudTags = getCachedCloudTags()
     if (hasCachedCloudTags()) {
-      // Keep built-in tags available even when an older cloud cache is
-      // incomplete; cloud-defined custom tags still override by name.
-      return mergeTagsByName(...DEFAULT_TAG_OPTIONS, ...cloudTags)
+      // Once cloud tags are ready, they are the source of truth. Do not merge
+      // local built-ins back in after a user deletes one from the shared space.
+      return cloudTags
     }
   }
 
@@ -344,8 +338,25 @@ export const getPlanTagColor = (tag: string) => {
     return normalizeTagColor(byId.name, byId.color)
   }
 
+  const builtin = getBuiltinTag(tag)
   const resolved = resolvePlanTag(tag)
   const option = getPlanTagOptions().find((item) => item.name === resolved)
+  if (option && resolved === tag) {
+    return normalizeTagColor(option.name, option.color)
+  }
+
+  // A deleted cloud tag can still be referenced by an older plan or record.
+  // Keep the canonical built-in color for those historical capsules without
+  // adding the deleted tag back into the selectable tag list.
+  if (builtin) {
+    return normalizeTagColor(builtin.name, builtin.color)
+  }
+
+  const localFallback = [...getPersonalTags(), ...getLegacyCustomTags()].find((item) => item.name === tag)
+  if (localFallback) {
+    return normalizeTagColor(localFallback.name, localFallback.color)
+  }
+
   return option ? normalizeTagColor(option.name, option.color) : '#7A857D'
 }
 
@@ -515,7 +526,7 @@ export const updatePlanTagOption = async (
   }
 
   const existing = getPlanTagById(id)
-  if (!existing || existing.isBuiltin) {
+  if (!existing) {
     return { ok: false, message: '无法修改此标签' }
   }
 

@@ -444,6 +444,32 @@ page {
   box-shadow: 0 12rpx 32rpx rgba(62, 94, 72, 0.06);
 }
 
+.partner-focus-slot {
+  max-height: 0;
+  margin-bottom: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateY(-18rpx);
+  transition:
+    max-height 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+    margin-bottom 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease,
+    transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.partner-focus-slot.is-visible {
+  max-height: 180rpx;
+  margin-bottom: 28rpx;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.partner-focus-card {
+  margin-bottom: 0;
+}
+
 .companion-avatar-wrap {
   position: relative;
   flex: 0 0 96rpx;
@@ -1764,8 +1790,11 @@ page {
 
 .plan-picker-indicator {
   height: 72rpx;
-  border-radius: 18rpx;
-  background: rgba(152, 198, 168, 0.1);
+  box-sizing: border-box;
+  border-top: 1rpx solid rgba(127, 181, 146, 0.24) !important;
+  border-bottom: 1rpx solid rgba(127, 181, 146, 0.24) !important;
+  background: transparent;
+  box-shadow: none;
 }
 
 @keyframes processingSpin {

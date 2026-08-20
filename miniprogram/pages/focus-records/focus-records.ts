@@ -28,6 +28,7 @@ interface FocusRecordView {
   tag: string
   tagId?: string
   detail: string
+  rawDetail: string
   durationText: string
   timeRange: string
   dateLabel: string
@@ -54,16 +55,36 @@ const shiftDate = (dateText: string, offset: number) => {
   return formatDateParts(date.getFullYear(), date.getMonth() + 1, date.getDate())
 }
 
-const toRecordView = (record: CompletedRecord, showDateLabel: boolean): FocusRecordView => ({
-  id: record.id,
-  tag: record.tag,
-  tagId: record.tagId,
-  detail: record.detail,
-  durationText: formatFocusMinutes(record.actualMinutes || 0),
-  timeRange: formatTimedRecordTimeRange(record),
-  dateLabel: formatRecordDateLabel(record.completedAt),
-  showDateLabel,
-})
+const normalizeRecordDetail = (value: unknown) => {
+  const detail = typeof value === 'string' ? value.trim() : ''
+  let displayDetail = ''
+
+  if (detail === '') {
+    displayDetail = '无备注'
+  } else {
+    displayDetail = detail
+  }
+
+  return displayDetail
+}
+
+const toRecordView = (record: CompletedRecord, showDateLabel: boolean): FocusRecordView => {
+  const rawDetail = `${record.detail || ''}`
+  console.log('rawDetail', rawDetail, record.detail)
+  const displayDetail = normalizeRecordDetail(record.detail)
+
+  return {
+    id: record.id,
+    tag: record.tag,
+    tagId: record.tagId,
+    detail: displayDetail,
+    rawDetail,
+    durationText: formatFocusMinutes(record.actualMinutes || 0),
+    timeRange: formatTimedRecordTimeRange(record),
+    dateLabel: formatRecordDateLabel(record.completedAt),
+    showDateLabel,
+  }
+}
 
 const buildEmptyText = (showAll: boolean, selectedDate: string) => {
   if (showAll) {
@@ -245,7 +266,7 @@ Component({
         editingRecordId: record.id,
         editingTag: resolvePlanTag(record.tag),
         editingTagId: record.tagId || '',
-        editingDetail: record.detail,
+        editingDetail: record.rawDetail,
         availableTags: getPlanTagOptions().map((item) => item.name),
         showEditTagFadeLeft: false,
         showEditTagFadeRight: false,
