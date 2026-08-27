@@ -338,29 +338,78 @@ const buildBarBuckets = (records: CompletedRecord[], range: StatsRange, periodAn
   const numBuckets = range === 'day' ? 12 : range === 'week' ? 7 : range === 'month' ? 10 : 12
   const bucketTagMaps: Array<Record<string, number>> = Array.from({ length: numBuckets }, () => ({}))
 
-  let daysInMonth = 30
-  if (range === 'month') {
-    const anchor = new Date(periodAnchor)
-    daysInMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate()
+  const { start: periodStart, end: periodEnd } = getRangeBounds(range, new Date(periodAnchor))
+  const periodEndExclusive = periodEnd + 1
+  const bucketWindows: Array<{ start: number; end: number; label: string }> = []
+
+  if (range === 'day') {
+    for (let i = 0; i < numBuckets; i++) {
+      const start = new Date(periodStart)
+      start.setHours(start.getHours() + i * 2)
+      const end = new Date(start)
+      end.setHours(end.getHours() + 2)
+      bucketWindows.push({ start: start.getTime(), end: end.getTime(), label: `${i * 2}` })
+    }
+  } else if (range === 'week') {
+    for (let i = 0; i < numBuckets; i++) {
+      const start = new Date(periodStart)
+      start.setDate(start.getDate() + i)
+      const end = new Date(start)
+      end.setDate(end.getDate() + 1)
+      bucketWindows.push({ start: start.getTime(), end: end.getTime(), label: WEEK_LABELS[i] })
+    }
+  } else if (range === 'month') {
+    const anchor = new Date(periodStart)
+    const daysInMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate()
+    for (let i = 0; i < numBuckets; i++) {
+      const startDay = Math.floor(i * daysInMonth / numBuckets) + 1
+      const nextDay = Math.floor((i + 1) * daysInMonth / numBuckets) + 1
+      const start = new Date(anchor.getFullYear(), anchor.getMonth(), startDay)
+      const end = new Date(anchor.getFullYear(), anchor.getMonth(), nextDay)
+      bucketWindows.push({
+        start: start.getTime(),
+        end: end.getTime(),
+        label: `${startDay}-${nextDay - 1}`,
+      })
+    }
+  } else {
+    const anchor = new Date(periodStart)
+    for (let i = 0; i < numBuckets; i++) {
+      const start = new Date(anchor.getFullYear(), i, 1)
+      const end = new Date(anchor.getFullYear(), i + 1, 1)
+      bucketWindows.push({ start: start.getTime(), end: end.getTime(), label: `${i + 1}` })
+    }
   }
 
-  for (const r of records) {
-    const minutes = r.actualMinutes || 0
+  bucketWindows.forEach((window) => {
+    window.start = Math.max(window.start, periodStart)
+    window.end = Math.min(window.end, periodEndExclusive)
+  })
+
+  for (const record of records) {
+    const minutes = Number(record.actualMinutes || 0)
     if (minutes <= 0) continue
 
-    let idx: number
-    if (range === 'day') {
-      idx = Math.min(Math.floor(new Date(r.completedAt).getHours() / 2), 11)
-    } else if (range === 'week') {
-      const d = new Date(r.completedAt).getDay()
-      idx = d === 0 ? 6 : d - 1
-    } else if (range === 'month') {
-      idx = Math.min(Math.floor((new Date(r.completedAt).getDate() - 1) * numBuckets / daysInMonth), numBuckets - 1)
-    } else {
-      idx = new Date(r.completedAt).getMonth()
+    const completedAt = Number(record.completedAt)
+    const startedAt = record.startedAt == null ? Number.NaN : Number(record.startedAt)
+    const hasTimeRange = Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt > startedAt
+
+    if (!hasTimeRange) {
+      const bucketIndex = bucketWindows.findIndex((window) => completedAt >= window.start && completedAt < window.end)
+      if (bucketIndex >= 0) {
+        bucketTagMaps[bucketIndex][record.tag] = (bucketTagMaps[bucketIndex][record.tag] || 0) + minutes
+      }
+      continue
     }
 
-    bucketTagMaps[idx][r.tag] = (bucketTagMaps[idx][r.tag] || 0) + minutes
+    const durationMs = completedAt - startedAt
+    bucketWindows.forEach((window, index) => {
+      const overlapMs = Math.max(0, Math.min(completedAt, window.end) - Math.max(startedAt, window.start))
+      if (overlapMs <= 0) return
+
+      const bucketMinutes = minutes * overlapMs / durationMs
+      bucketTagMaps[index][record.tag] = (bucketTagMaps[index][record.tag] || 0) + bucketMinutes
+    })
   }
 
   const buckets: BarBucket[] = []
@@ -369,21 +418,8 @@ const buildBarBuckets = (records: CompletedRecord[], range: StatsRange, periodAn
       .map(([tag, minutes]) => ({ tag, minutes, color: getTagBindColor(tag) }))
       .sort((a, b) => a.minutes - b.minutes)
 
-    let label: string
-    if (range === 'day') {
-      label = `${i * 2}`
-    } else if (range === 'week') {
-      label = WEEK_LABELS[i]
-    } else if (range === 'month') {
-      const s = Math.floor(i * daysInMonth / numBuckets) + 1
-      const e = Math.floor((i + 1) * daysInMonth / numBuckets)
-      label = `${s}-${e}`
-    } else {
-      label = `${i + 1}`
-    }
-
     buckets.push({
-      label,
+      label: bucketWindows[i].label,
       totalMinutes: segments.reduce((s, seg) => s + seg.minutes, 0),
       segments,
     })
@@ -499,7 +535,8 @@ const buildBarChartOption = (
   const tagNames = Array.from(new Set(buckets.flatMap((bucket) => bucket.segments.map((segment) => segment.tag))))
   const colorMap = new Map<string, string>()
   buckets.forEach((bucket) => bucket.segments.forEach((segment) => colorMap.set(segment.tag, segment.color)))
-  const axisMax = getNiceAxisMax(maxMinutes)
+  // 日视图每根柱子代表两个小时，固定上限避免长记录把纵轴整体撑到 3h、4h。
+  const axisMax = unitLabel === '单位：时' ? 120 : getNiceAxisMax(maxMinutes)
 
   return {
     animation: true,
