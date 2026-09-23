@@ -37,6 +37,12 @@ export default class WxCanvas {
     // noop
   }
 
+  // ECharts calls this during dispose(). The Mini Program canvas adapter
+  // does not need to detach native listeners, but it must expose the method.
+  removeEventListener() {
+    // noop
+  }
+
   attachEvent() {
     // noop
   }

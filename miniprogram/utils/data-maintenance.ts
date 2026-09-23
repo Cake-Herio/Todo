@@ -5,6 +5,8 @@ export interface MaintenanceItem {
   id: string
   title: string
   date: string
+  timeRange?: string
+  durationMinutes?: number
 }
 
 export interface MaintenanceResult {
@@ -12,6 +14,7 @@ export interface MaintenanceResult {
   message?: string
   destructive?: boolean
   executed?: boolean
+  operation?: 'preview' | 'delete' | 'update'
   count?: number
   items?: MaintenanceItem[]
 }

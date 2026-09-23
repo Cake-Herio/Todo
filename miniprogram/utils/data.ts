@@ -40,6 +40,7 @@ export interface CompletedRecord {
   startedAt: number | null
   completedAt: number
   completionMode: CompletionMode
+  actualSeconds?: number
   actualMinutes: number | null
   wasOverdue: boolean
 }
@@ -598,6 +599,7 @@ export interface TimedCompletionInput {
   tagId?: string
   detail?: string
   actualMinutes: number
+  actualSeconds?: number
   startedAt: number
   completedAt?: number
   planId?: string
@@ -612,6 +614,7 @@ export interface TimedCompletionDraft {
 interface TimedCompletionSegment {
   startedAt: number
   completedAt: number
+  actualSeconds: number
   actualMinutes: number
 }
 
@@ -619,9 +622,19 @@ const splitTimedCompletionSegments = (
   startedAt: number,
   completedAt: number,
   totalMinutes: number,
+  totalSeconds: number,
 ): TimedCompletionSegment[] => {
+  const safeTotalSeconds = Math.max(1, totalSeconds || Math.max(1, totalMinutes) * 60)
+
   if (completedAt <= startedAt || new Date(startedAt).toDateString() === new Date(completedAt).toDateString()) {
-    return [{ startedAt, completedAt, actualMinutes: Math.max(1, totalMinutes) }]
+    return [
+      {
+        startedAt,
+        completedAt,
+        actualSeconds: safeTotalSeconds,
+        actualMinutes: Math.max(1, Math.ceil(safeTotalSeconds / 60)),
+      },
+    ]
   }
 
   const segments: Array<{ startedAt: number; completedAt: number; durationMs: number }> = []
@@ -642,16 +655,29 @@ const splitTimedCompletionSegments = (
     segmentStart = segmentEnd
   }
 
-  return segments.map((segment) => ({
-    startedAt: segment.startedAt,
-    completedAt: segment.completedAt,
-    actualMinutes: Math.max(1, Math.ceil(segment.durationMs / 60000)),
-  }))
+  const totalDurationMs = Math.max(1, completedAt - startedAt)
+  let assignedSeconds = 0
+
+  return segments.map((segment, index) => {
+    const actualSeconds =
+      index === segments.length - 1
+        ? Math.max(1, safeTotalSeconds - assignedSeconds)
+        : Math.max(1, Math.round((safeTotalSeconds * segment.durationMs) / totalDurationMs))
+    assignedSeconds += actualSeconds
+
+    return {
+      startedAt: segment.startedAt,
+      completedAt: segment.completedAt,
+      actualSeconds,
+      actualMinutes: Math.max(1, Math.ceil(actualSeconds / 60)),
+    }
+  })
 }
 
 export const buildTimedCompletion = (input: TimedCompletionInput): TimedCompletionDraft => {
   const data = getLocalData()
   const completedAt = input.completedAt ?? Date.now()
+  const actualSeconds = Math.max(1, Math.round(input.actualSeconds ?? input.actualMinutes * 60))
   const linkedPlan = input.planId ? data.plans.find((plan) => plan.id === input.planId) : null
   const ownerKey = linkedPlan?.ownerKey || input.ownerKey || 'me'
   const planId = linkedPlan?.id || `focus-${completedAt}`
@@ -660,7 +686,7 @@ export const buildTimedCompletion = (input: TimedCompletionInput): TimedCompleti
   const title = linkedPlan?.title || tag
   const detail = input.detail?.trim() || linkedPlan?.remark || title
 
-  const segments = splitTimedCompletionSegments(input.startedAt, completedAt, input.actualMinutes)
+  const segments = splitTimedCompletionSegments(input.startedAt, completedAt, input.actualMinutes, actualSeconds)
   const records = segments.map((segment, index) => ({
     id: `record-${completedAt}${segments.length > 1 ? `-${index + 1}` : ''}`,
     planId,
@@ -672,6 +698,7 @@ export const buildTimedCompletion = (input: TimedCompletionInput): TimedCompleti
     startedAt: segment.startedAt,
     completedAt: segment.completedAt,
     completionMode: 'timed' as const,
+    actualSeconds: segment.actualSeconds,
     actualMinutes: segment.actualMinutes,
     wasOverdue: linkedPlan?.status === 'overdue',
   }))

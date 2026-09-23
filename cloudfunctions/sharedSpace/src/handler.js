@@ -731,21 +731,38 @@ const ensureDefaultSharedTags = async (sharedSpaceId, openid) => {
   await seedDefaultSharedTags(sharedSpaceId, openid)
 }
 
+const readAllDocuments = async (collectionName, condition = {}) => {
+  const documents = []
+  const pageSize = 100
+  let cursor = ''
+  while (true) {
+    const where = cursor ? { ...condition, _id: _.gt(cursor) } : condition
+    const result = await db.collection(collectionName).where(where).orderBy('_id', 'asc').limit(pageSize).get()
+    const page = result.data || []
+    documents.push(...page)
+    if (page.length < pageSize) return documents
+    const nextCursor = page[page.length - 1]._id
+    if (!nextCursor || nextCursor === cursor) throw new Error('数据库分页游标未推进')
+    cursor = nextCursor
+  }
+}
+
 const fetchSharedSpacePayload = async (sharedSpaceId, openid) => {
   await ensureDefaultSharedTags(sharedSpaceId, openid)
 
   const [membersRes, plansRes, recordsRes, tags] = await Promise.all([
     listRoomMembersWithProfiles(sharedSpaceId),
-    db.collection('plans').where({ sharedSpaceId }).get(),
-    db.collection('completed_records').where({ sharedSpaceId }).get(),
+    readAllDocuments('plans', { sharedSpaceId }),
+    readAllDocuments('completed_records', { sharedSpaceId }),
     listVisibleTags(sharedSpaceId, openid),
   ])
 
   return {
     sharedSpaceId,
     members: mapSpaceMembers(membersRes),
-    plans: plansRes.data || [],
-    records: recordsRes.data || [],
+    plans: plansRes,
+    records: recordsRes,
+    syncVersion: 'records-paged-v1',
     tags,
   }
 }
@@ -940,7 +957,7 @@ const updateCompletedRecord = async (openid, user, payload = {}) => {
 
 const saveTimedCompletion = async (openid, user, payload = {}) => {
   if (!user?.sharedSpaceId) {
-    return { ok: false, message: '未加入共享空间' }
+    return { ok: false, message: '当前账号未绑定共享房间，无法保存计时记录' }
   }
 
   if (!Array.isArray(payload.records) || payload.records.length === 0) {
@@ -960,6 +977,17 @@ const saveTimedCompletion = async (openid, user, payload = {}) => {
       return { ok: false, message: '完成记录必须包含标签' }
     }
 
+    const actualSeconds = Math.max(
+      1,
+      Number(item?.actualSeconds) || Math.max(1, Number(item?.actualMinutes) || 1) * 60,
+    )
+    const startedAt = Number(item?.startedAt)
+    const completedAt = Number(item?.completedAt)
+
+    if (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) || completedAt <= startedAt) {
+      return { ok: false, message: `记录 ${recordId} 的时间范围无效` }
+    }
+
     records.push({
       id: recordId,
       planId: `${item?.planId || ''}`.trim() || `focus-${item?.completedAt || Date.now()}`,
@@ -969,14 +997,16 @@ const saveTimedCompletion = async (openid, user, payload = {}) => {
       tag,
       tagId: `${item?.tagId || ''}`.trim(),
       detail: `${item?.detail || ''}`.trim(),
-      startedAt: Number(item?.startedAt) || Date.now(),
-      completedAt: Number(item?.completedAt) || Date.now(),
+      startedAt,
+      completedAt,
       completionMode: 'timed',
-      actualMinutes: Math.max(1, Number(item?.actualMinutes) || 1),
+      actualSeconds,
+      actualMinutes: Math.max(1, Math.ceil(actualSeconds / 60)),
       wasOverdue: Boolean(item?.wasOverdue),
     })
   }
 
+  const persistedRecords = []
   for (const data of records) {
     const existingRes = await db
       .collection('completed_records')
@@ -994,6 +1024,18 @@ const saveTimedCompletion = async (openid, user, payload = {}) => {
     } else {
       await db.collection('completed_records').add({ data })
     }
+
+    const verifyRes = await db
+      .collection('completed_records')
+      .where({ sharedSpaceId: user.sharedSpaceId, id: data.id })
+      .limit(1)
+      .get()
+    const persisted = verifyRes.data[0]
+    if (!persisted?._id) {
+      throw new Error(`完成记录写入后无法读取：${data.id}`)
+    }
+
+    persistedRecords.push({ id: data.id, documentId: persisted._id })
   }
 
   const linkedPlanId = `${payload.linkedPlanId || ''}`.trim()
@@ -1013,7 +1055,7 @@ const saveTimedCompletion = async (openid, user, payload = {}) => {
     }
   }
 
-  return { ok: true, ids: records.map((item) => item.id), planUpdated }
+  return { ok: true, ids: records.map((item) => item.id), persistedRecords, planUpdated }
 }
 
 const deletePlan = async (openid, user, payload = {}) => {
@@ -1054,12 +1096,78 @@ const getChinaDate = (timestamp) => {
   return new Date(value + 8 * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
 
+const formatChinaDateTime = (timestamp) => {
+  const value = Number(timestamp)
+  if (!Number.isFinite(value) || value <= 0) {
+    return ''
+  }
+
+  return new Date(value + 8 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', ' ')
+}
+
+const parseMaintenanceTimestamp = (value) => {
+  const text = `${value || ''}`.trim()
+  const timestamp = /^\d+$/.test(text) ? Number(text) : new Date(text).getTime()
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    throw new Error(`无效时间：${text}`)
+  }
+  return timestamp
+}
+
 const parseMaintenanceCommand = (rawCommand) => {
   const command = `${rawCommand || ''}`.trim()
+
+  const recordIdPreviewMatch = command.match(
+    /^preview\s+completed_records\s+where\s+id=([A-Za-z0-9._:-]+)(?:\s+scope=(mine|all))?$/i,
+  )
+  if (recordIdPreviewMatch) {
+    return {
+      type: 'previewRecords',
+      destructive: false,
+      id: recordIdPreviewMatch[1],
+      scope: recordIdPreviewMatch[2] || 'all',
+    }
+  }
+
+  const filteredPreviewMatch = command.match(
+    /^preview\s+completed_records\s+where\s+date=(\d{4}-\d{2}-\d{2})(?:\s+tag=([^\s]+))?(?:\s+owner=([^\s]+))?(?:\s+scope=(mine|all))?$/i,
+  )
+  if (filteredPreviewMatch) {
+    return {
+      type: 'previewRecords',
+      destructive: false,
+      date: filteredPreviewMatch[1],
+      tags: filteredPreviewMatch[2]
+        ? filteredPreviewMatch[2].split(',').map((tag) => tag.trim()).filter(Boolean)
+        : [],
+      owner: filteredPreviewMatch[3] || '',
+      scope: filteredPreviewMatch[4] || 'all',
+    }
+  }
 
   const previewMatch = command.match(/^preview\s+completed_records(?:\s+scope=(mine|all))?$/i)
   if (previewMatch) {
     return { type: 'previewRecords', destructive: false, scope: previewMatch[1] || 'all' }
+  }
+
+  const updateRecordTimeMatch = command.match(
+    /^update\s+completed_records\s+where\s+id=([A-Za-z0-9._:-]+)\s+startedAt=([^\s]+)\s+completedAt=([^\s]+)(?:\s+scope=(mine|all))?$/i,
+  )
+  if (updateRecordTimeMatch) {
+    const startedAt = parseMaintenanceTimestamp(updateRecordTimeMatch[2])
+    const completedAt = parseMaintenanceTimestamp(updateRecordTimeMatch[3])
+    if (completedAt <= startedAt) {
+      throw new Error('结束时间必须晚于开始时间')
+    }
+
+    return {
+      type: 'updateRecordTime',
+      destructive: true,
+      id: updateRecordTimeMatch[1],
+      startedAt,
+      completedAt,
+      scope: updateRecordTimeMatch[4] || 'all',
+    }
   }
 
   const recordIdMatch = command.match(/^delete\s+completed_records\s+where\s+id=([A-Za-z0-9._:-]+)$/i)
@@ -1086,13 +1194,12 @@ const parseMaintenanceCommand = (rawCommand) => {
 }
 
 const loadOwnMaintenanceDocs = async (collectionName, sharedSpaceId, openid) => {
-  const result = await db.collection(collectionName).where({ sharedSpaceId }).get()
-  return (result.data || []).filter((doc) => getMaintenanceOwner(doc) === openid)
+  const documents = await readAllDocuments(collectionName, { sharedSpaceId })
+  return documents.filter((doc) => getMaintenanceOwner(doc) === openid)
 }
 
 const loadGlobalMaintenanceDocs = async (collectionName) => {
-  const result = await db.collection(collectionName).get()
-  return result.data || []
+  return readAllDocuments(collectionName)
 }
 
 const getChinaDateStartMs = (date) => new Date(`${date}T00:00:00+08:00`).getTime()
@@ -1125,6 +1232,10 @@ const toMaintenanceItem = (collection, doc) => ({
   id: doc.id || doc._id || '',
   title: doc.title || doc.tag || doc.detail || '未命名数据',
   date: doc.date || getChinaDate(doc.completedAt || doc.createdAt || doc.updatedAt),
+  timeRange: doc.startedAt && doc.completedAt
+    ? `${formatChinaDateTime(doc.startedAt)} - ${formatChinaDateTime(doc.completedAt)}`
+    : '',
+  durationMinutes: Number(doc.actualMinutes) || 0,
 })
 
 const getMaintenanceTargets = async (openid, user, parsed) => {
@@ -1134,8 +1245,39 @@ const getMaintenanceTargets = async (openid, user, parsed) => {
     : () => loadOwnMaintenanceDocs('completed_records', sharedSpaceId, openid)
 
   if (parsed.type === 'previewRecords') {
-    const records = await loadRecords()
-    return records.map((doc) => ({ collection: 'completed_records', doc }))
+    const condition = parsed.scope === 'all' ? {} : { sharedSpaceId }
+    if (parsed.id) condition.id = parsed.id
+    if (parsed.date) {
+      const start = getChinaDateStartMs(parsed.date)
+      condition.completedAt = _.gte(start).and(_.lt(start + 24 * 60 * 60 * 1000))
+    }
+    let records = await readAllDocuments('completed_records', condition)
+    if (parsed.scope !== 'all') records = records.filter((doc) => getMaintenanceOwner(doc) === openid)
+
+    if (parsed.owner) {
+      const members = sharedSpaceId ? await listRoomMembersWithProfiles(sharedSpaceId) : []
+      const ownerIds = new Set(
+        members
+          .filter((member) => `${member.nickname || ''}`.trim() === parsed.owner)
+          .map((member) => member.openid),
+      )
+      records = records.filter((doc) => ownerIds.has(getMaintenanceOwner(doc)))
+    }
+
+    return records
+      .filter((doc) => !parsed.id || doc.id === parsed.id)
+      .filter((doc) => !parsed.date || getChinaDate(doc.completedAt) === parsed.date)
+      .filter((doc) => !parsed.tags?.length || parsed.tags.includes(`${doc.tag || ''}`.trim()))
+      .map((doc) => ({ collection: 'completed_records', doc }))
+  }
+
+  if (parsed.type === 'updateRecordTime') {
+    const condition = parsed.scope === 'all' ? { id: parsed.id } : { id: parsed.id, sharedSpaceId }
+    const records = await readAllDocuments('completed_records', condition)
+    return records
+      .filter((doc) => parsed.scope === 'all' || getMaintenanceOwner(doc) === openid)
+      .filter((doc) => doc.id === parsed.id)
+      .map((doc) => ({ collection: 'completed_records', doc }))
   }
 
   if (parsed.type === 'deleteRecordId' || parsed.type === 'deleteRecordDate' || parsed.type === 'deleteRecordBefore') {
@@ -1182,6 +1324,7 @@ const dataMaintenance = async (openid, user, payload = {}) => {
     return {
       ok: true,
       destructive: parsed.destructive,
+      operation: parsed.type === 'updateRecordTime' ? 'update' : parsed.destructive ? 'delete' : 'preview',
       executed: false,
       count: targets.length,
       items,
@@ -1190,6 +1333,39 @@ const dataMaintenance = async (openid, user, payload = {}) => {
 
   if (!parsed.destructive) {
     return { ok: false, message: '该指令只能预览，不能执行删除' }
+  }
+
+  if (parsed.type === 'updateRecordTime') {
+    const actualSeconds = Math.max(1, Math.round((parsed.completedAt - parsed.startedAt) / 1000))
+    const actualMinutes = Math.max(1, Math.ceil(actualSeconds / 60))
+
+    for (const target of targets) {
+      if (target.doc?._id) {
+        await db.collection('completed_records').doc(target.doc._id).update({
+          data: {
+            startedAt: parsed.startedAt,
+            completedAt: parsed.completedAt,
+            actualSeconds,
+            actualMinutes,
+            updatedAt: Date.now(),
+          },
+        })
+      }
+    }
+
+    return {
+      ok: true,
+      destructive: true,
+      operation: 'update',
+      executed: true,
+      count: targets.length,
+      items: targets.map((target) => toMaintenanceItem(target.collection, {
+        ...target.doc,
+        startedAt: parsed.startedAt,
+        completedAt: parsed.completedAt,
+        actualMinutes,
+      })),
+    }
   }
 
   for (const target of targets) {
@@ -1277,7 +1453,7 @@ exports.main = async (event) => {
       console.error(`[sharedSpace] ${event.action}`, error)
       return {
         ok: false,
-        message: error.message || '房间操作失败',
+        message: error.message || error.errMsg || '房间操作失败',
       }
     }
   }
@@ -1397,7 +1573,7 @@ exports.main = async (event) => {
       }
 
       if (event.action === 'saveTimedCompletion') {
-        return saveTimedCompletion(openid, user, event.payload || {})
+        return await saveTimedCompletion(openid, user, event.payload || {})
       }
 
       if (event.action === 'deletePlan') {
@@ -1458,7 +1634,7 @@ exports.main = async (event) => {
       console.error(`[sharedSpace] ${event.action}`, error)
       return {
         ok: false,
-        message: error.message || '读取共享空间失败',
+        message: error.message || error.errMsg || '读取共享空间失败',
       }
     }
   }

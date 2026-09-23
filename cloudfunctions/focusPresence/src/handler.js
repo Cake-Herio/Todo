@@ -7,6 +7,21 @@ cloud.init({
 const db = cloud.database()
 const COLLECTION = 'focus_sessions'
 
+const readAllDocuments = async (collectionName, sharedSpaceId) => {
+  const documents = []
+  let cursor = ''
+  while (true) {
+    const condition = cursor ? { sharedSpaceId, _id: db.command.gt(cursor) } : { sharedSpaceId }
+    const result = await db.collection(collectionName).where(condition).orderBy('_id', 'asc').limit(100).get()
+    const page = result.data || []
+    documents.push(...page)
+    if (page.length < 100) return documents
+    const nextCursor = page[page.length - 1]._id
+    if (!nextCursor || nextCursor === cursor) throw new Error('数据库分页游标未推进')
+    cursor = nextCursor
+  }
+}
+
 const ensureCollection = async () => {
   try {
     await db.createCollection(COLLECTION)
@@ -136,8 +151,8 @@ exports.main = async (event) => {
 
     if (action === 'syncSharedData') {
       const [plansRes, recordsRes] = await Promise.all([
-        db.collection('plans').where({ sharedSpaceId: ctx.sharedSpaceId }).get(),
-        db.collection('completed_records').where({ sharedSpaceId: ctx.sharedSpaceId }).get(),
+        readAllDocuments('plans', ctx.sharedSpaceId),
+        readAllDocuments('completed_records', ctx.sharedSpaceId),
       ])
 
       const members = ctx.members
@@ -152,8 +167,9 @@ exports.main = async (event) => {
         ok: true,
         sharedSpaceId: ctx.sharedSpaceId,
         members,
-        plans: plansRes.data || [],
-        records: recordsRes.data || [],
+        plans: plansRes,
+        records: recordsRes,
+        syncVersion: 'records-paged-v1',
         hasPartner: ctx.members.length > 1,
       }
     }

@@ -23,6 +23,7 @@ import { dismissModal, openModal } from '../../utils/modal-dismiss'
 import { addPlanTagOption, getPlanTagNames } from '../../utils/plan-tags'
 import { getScrollFadeState } from '../../utils/scroll-fade'
 import { saveTimedCompletionOnCloud } from '../../utils/cloud-sync'
+import { debugRecords } from '../../utils/record-debug'
 
 interface BindablePlanView {
   id: string
@@ -115,6 +116,12 @@ interface LocalFocusSession {
   savedAt: number
 }
 
+interface CompletionSnapshot {
+  startedAt: number
+  completedAt: number
+  elapsedSeconds: number
+}
+
 const LOCAL_FOCUS_KEY = 'myforest_local_focus_session'
 const LOCAL_FOCUS_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24 小时过期
 const PENDING_STATS_TOAST_KEY = 'myforest_pending_stats_toast'
@@ -178,6 +185,7 @@ Component({
   focusStartedAt: 0,
   accumulatedElapsedMs: 0,
   focusSegmentStartedAt: 0,
+  completionSnapshot: null as CompletionSnapshot | null,
   activitySmithSyncedMinute: -1,
   tagScrollViewportWidth: 0,
   idleTagScrollViewportWidth: 0,
@@ -562,6 +570,7 @@ Component({
       this.focusStartedAt = Date.now()
       this.accumulatedElapsedMs = 0
       this.focusSegmentStartedAt = 0
+      this.completionSnapshot = null
       this.activitySmithSyncedMinute = -1
 
       this.setData({
@@ -663,6 +672,11 @@ Component({
       this.clearBarkFocusSession()
 
       const focusCompletedAt = Date.now()
+      this.completionSnapshot = {
+        startedAt: this.focusStartedAt,
+        completedAt: focusCompletedAt,
+        elapsedSeconds,
+      }
       const bindablePlans = getBindablePlansForToday('me').map(toBindablePlanView)
       let linkedPlanId = this.data.linkedPlanId
 
@@ -960,6 +974,7 @@ Component({
 
       dismissModal(this, 'isFinishPanelVisible', 'isFinishPanelClosing', {
         onDismissed: () => {
+          this.completionSnapshot = null
           this.leaveFocusPage()
         },
       })
@@ -977,7 +992,16 @@ Component({
         return
       }
 
-      const elapsedSeconds = this.getElapsedSeconds()
+      const snapshot = this.completionSnapshot
+      if (!snapshot) {
+        wx.showToast({
+          title: '计时数据已失效，请重新结束计时',
+          icon: 'none',
+        })
+        return
+      }
+
+      const { elapsedSeconds, startedAt, completedAt } = snapshot
 
       if (elapsedSeconds < MIN_FOCUS_SECONDS) {
         wx.showToast({
@@ -993,15 +1017,22 @@ Component({
         tag: this.data.selectedTag,
         detail: this.data.detail,
         actualMinutes,
-        startedAt: this.focusStartedAt,
-        completedAt: this.data.focusCompletedAt || Date.now(),
+        actualSeconds: elapsedSeconds,
+        startedAt,
+        completedAt,
         planId: this.data.linkedPlanId || undefined,
       })
+
+      console.log('[focus] completion save snapshot', snapshot, draft.records)
 
       this.setData({ isSavingCompletion: true })
       try {
         await saveTimedCompletionOnCloud(draft)
       } catch (error) {
+        console.error('[focus] completion save failed', {
+          error,
+          recordIds: draft.records.map((record) => record.id),
+        })
         this.setData({ isSavingCompletion: false })
         wx.showToast({
           title: error instanceof Error ? error.message : '云端保存失败，请稍后重试',
@@ -1010,7 +1041,16 @@ Component({
         return
       }
 
-      saveTimedCompletionLocally(draft)
+      try {
+        const saved = saveTimedCompletionLocally(draft)
+        debugRecords('save.local-written', saved)
+      } catch (error) {
+        console.error('[record-debug] local cache write failed after cloud save', error)
+        this.setData({ isSavingCompletion: false })
+        wx.showModal({ title: '云端已保存', content: '本地缓存更新失败，请重试保存以刷新页面。', showCancel: false })
+        return
+      }
+      this.completionSnapshot = null
 
       dismissModal(this, 'isFinishPanelVisible', 'isFinishPanelClosing', {
         onDismissed: () => {

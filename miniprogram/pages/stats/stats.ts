@@ -6,6 +6,7 @@ import { dismissModal, openModal } from '../../utils/modal-dismiss'
 import { getScrollFadeState } from '../../utils/scroll-fade'
 import { getOwnerFilterState, getOwnerFilterStateLocal } from '../../utils/owner-filters'
 import * as echarts from '../../components/ec-canvas/echarts'
+import { debugRecords } from '../../utils/record-debug'
 
 type StatsRange = 'day' | 'week' | 'month' | 'year'
 type TagFilterMode = 'all' | 'none' | 'custom'
@@ -615,7 +616,9 @@ const buildStatsView = (
   selectedTagKeys: string[] = [],
   ownerFilter = 'me',
 ) => {
-  const ownerRecords = getCompletedRecords().filter(
+  const allRecords = getCompletedRecords()
+  debugRecords('stats.local-input', allRecords)
+  const ownerRecords = allRecords.filter(
     (record) => ownerFilter === 'all' || record.ownerKey === ownerFilter,
   )
   const ownerPlans = getPlans().filter(
@@ -624,6 +627,9 @@ const buildStatsView = (
   const rangeRecords = filterRecordsByRange(ownerRecords, range, periodAnchor)
   const availableTagFilters = buildAvailableTagFilters(rangeRecords)
   const records = filterByTagSelection(rangeRecords, tagFilterMode, selectedTagKeys)
+  debugRecords('stats.owner-filter', ownerRecords, { ownerFilter })
+  debugRecords('stats.period-filter', rangeRecords, { range, periodAnchor })
+  debugRecords('stats.tag-filter', records, { tagFilterMode, selectedTagKeys })
   const timedCount = records.filter((record) => record.completionMode === 'timed').length
   const plansInRange = filterByTagSelection(filterPlansByRange(ownerPlans, range, periodAnchor), tagFilterMode, selectedTagKeys)
   const completedPlanCount = plansInRange.filter((plan) => plan.status === 'completed').length
@@ -725,10 +731,10 @@ Component({
     activeFilter: getOwnerFilterStateLocal('me').activeFilter,
     singleUserMode: getOwnerFilterStateLocal('me').singleUserMode,
     rangeOptions: RANGE_OPTIONS,
-    statsRange: 'week' as StatsRange,
+    statsRange: 'day' as StatsRange,
     periodAnchor: Date.now(),
-    rangeLabel: '每周',
-    rangeIndex: 1,
+    rangeLabel: '每日',
+    rangeIndex: 0,
     periodTitle: '',
     periodHint: '当前周期',
     isCurrentPeriod: true,
@@ -791,12 +797,26 @@ Component({
   },
   methods: {
     disposeCharts() {
-      this.pieChart?.dispose()
-      this.barChart?.dispose()
+      const pieChart = this.pieChart
+      const barChart = this.barChart
+
+      // Clear references first so repeated detached/hot-reload callbacks are harmless.
       this.pieChart = null
       this.barChart = null
       this.pieChartInitPending = false
       this.barChartInitPending = false
+
+      ;[pieChart, barChart].forEach((chart) => {
+        if (!chart) {
+          return
+        }
+
+        try {
+          chart.dispose()
+        } catch (error) {
+          console.warn('[stats] chart dispose skipped', error)
+        }
+      })
     },
     updatePieChart(legend: TagPieLegendView[], totalMinutes: number) {
       const option = buildPieChartOption(legend, totalMinutes)

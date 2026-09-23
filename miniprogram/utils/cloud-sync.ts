@@ -1,4 +1,5 @@
 import { registerCloudMutateHandler, type CloudMutation } from './cloud-bridge'
+import { beginRecordTrace, debugRecords } from './record-debug'
 import { getCloudEnvId, isCloudEnabled, SHARED_SPACE_CLOUD_FUNCTION } from './cloud-config'
 import {
   clearCompletedRecordDeletion,
@@ -47,6 +48,7 @@ interface CloudRecordDoc extends Omit<CompletedRecord, 'ownerKey'> {
 
 interface SyncSharedDataResult {
   ok?: boolean
+  syncVersion?: string
   message?: string
   plans?: CloudPlanDoc[]
   records?: CloudRecordDoc[]
@@ -202,6 +204,7 @@ const cloudRecordToRecord = (doc: CloudRecordDoc, session: UserSession): Complet
   startedAt: doc.startedAt,
   completedAt: doc.completedAt,
   completionMode: doc.completionMode,
+  actualSeconds: doc.actualSeconds,
   actualMinutes: doc.actualMinutes,
   wasOverdue: doc.wasOverdue,
 })
@@ -244,6 +247,7 @@ const recordToCloudDoc = (record: CompletedRecord, session: UserSession): CloudR
     startedAt: record.startedAt,
     completedAt: record.completedAt,
     completionMode: record.completionMode,
+    actualSeconds: record.actualSeconds,
     actualMinutes: record.actualMinutes,
     wasOverdue: record.wasOverdue,
   }
@@ -289,12 +293,17 @@ const fetchSharedDataViaCloudFunction = async (): Promise<SharedCloudPayload | n
       }),
   ]
 
-  for (const call of callers) {
+  for (const [index, call] of callers.entries()) {
     try {
       const result = await call()
       const payload = result.result as SyncSharedDataResult
 
       if (payload?.ok) {
+        debugRecords('sync.response', payload.records || [], {
+          source: index === 0 ? SHARED_SPACE_CLOUD_FUNCTION : 'focusPresence',
+          syncVersion: payload.syncVersion || 'legacy-unpaged',
+          env: getCloudEnvId(),
+        })
         return {
           plans: payload.plans || [],
           records: payload.records || [],
@@ -364,19 +373,44 @@ export const saveTimedCompletionOnCloud = async (draft: TimedCompletionDraft) =>
   }
 
   const cloudRecords = draft.records.map((record) => recordToCloudDoc(record, session))
-  const result = await wx.cloud.callFunction({
-    name: SHARED_SPACE_CLOUD_FUNCTION,
-    data: {
-      action: 'saveTimedCompletion',
-      payload: {
-        records: cloudRecords,
-        linkedPlanId: draft.linkedPlanId || '',
-      },
-    },
+  beginRecordTrace(cloudRecords.map((record) => record.id))
+  debugRecords('save.request', cloudRecords, { env: getCloudEnvId(), sharedSpaceId: session.sharedSpaceId })
+  console.log('[cloud] saveTimedCompletion requested', {
+    cloudFunction: SHARED_SPACE_CLOUD_FUNCTION,
+    sharedSpaceId: session.sharedSpaceId,
+    recordIds: cloudRecords.map((record) => record.id),
+    timeRanges: cloudRecords.map((record) => ({
+      startedAt: record.startedAt,
+      completedAt: record.completedAt,
+      actualSeconds: record.actualSeconds,
+    })),
   })
-  const payload = result.result as { ok?: boolean; message?: string }
-  if (!payload?.ok) {
-    throw new Error(payload?.message || '云端保存计时记录失败')
+  console.log('[cloud] saveTimedCompletion record ids', cloudRecords.map((record) => record.id).join(', '))
+
+  try {
+    const result = await wx.cloud.callFunction({
+      name: SHARED_SPACE_CLOUD_FUNCTION,
+      data: {
+        action: 'saveTimedCompletion',
+        payload: {
+          records: cloudRecords,
+          linkedPlanId: draft.linkedPlanId || '',
+        },
+      },
+    })
+    const payload = result.result as { ok?: boolean; message?: string; errCode?: number; errMsg?: string; ids?: string[] }
+    console.log('[cloud] saveTimedCompletion response', JSON.stringify(payload))
+    if (!payload?.ok) {
+      throw new Error(payload?.message || payload?.errMsg || '云端保存计时记录失败')
+    }
+    if (!Array.isArray(payload.ids) || cloudRecords.some((record) => !payload.ids!.includes(record.id))) {
+      throw new Error('云端未确认全部记录，请保留当前页面重试')
+    }
+    debugRecords('save.confirmed', cloudRecords, { response: payload })
+  } catch (error) {
+    console.error('[cloud] saveTimedCompletion failed', error)
+    const failure = error as { message?: string; errMsg?: string }
+    throw error instanceof Error ? error : new Error(failure?.errMsg || failure?.message || '云端保存计时记录失败')
   }
 }
 
@@ -561,6 +595,8 @@ export const syncFromCloud = async (): Promise<boolean> => {
       const cloudRecords = cloudRecordDocs
         .filter((doc) => !deletedRecordIds.has(doc.id))
         .map((doc) => cloudRecordToRecord(doc, session))
+      debugRecords('sync.before-replace', local.completedRecords)
+      debugRecords('sync.after-filter', cloudRecords, { sharedSpaceId: session.sharedSpaceId, deletionCount: deletedRecordIds.size })
       // 云端是唯一事实来源。只有发生本地明确变更时才会在 fetch 前 flush，
       // 普通刷新不能用本地旧缓存补回云端已删除或已修改的数据。
       const plans = mergeByUpdatedAt(local.plans, cloudPlans)
@@ -573,6 +609,7 @@ export const syncFromCloud = async (): Promise<boolean> => {
       if (changed) {
         saveLocalData({ plans, completedRecords })
       }
+      debugRecords('sync.local-readback', getLocalData().completedRecords, { changed })
 
       wx.setStorageSync(BOOTSTRAP_KEY, true)
       return changed
